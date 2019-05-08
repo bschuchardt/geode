@@ -85,8 +85,7 @@ public class PhiAccrualFailureDetectorTest {
     double stddev = 50;
     long now = System.currentTimeMillis();
     long[] intervals =
-        new long[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, -14, -15, -16, -17, -18, -19, -20,
-            21, 22, 23, 24};
+        new long[] {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, -14, -15};
     int heartbeatInterval = 5000;
     int acceptableHeartbeatPauseMillis = 0; // heartbeatInterval / 4;
     PhiAccrualFailureDetector detector =
