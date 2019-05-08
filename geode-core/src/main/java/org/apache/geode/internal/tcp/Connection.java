@@ -121,10 +121,10 @@ public class Connection implements Runnable {
   @MakeNotStatic
   private static final AtomicLong idCounter = new AtomicLong(1);
 
-  /** string used as the reason for initiating suspect processing */
-  public static final String INITIATING_SUSPECT_PROCESSING =
-      "member unexpectedly shut down shared, unordered connection";
-
+  // /** string used as the reason for initiating suspect processing */
+  // public static final String INITIATING_SUSPECT_PROCESSING =
+  // "member unexpectedly shut down shared, unordered connection";
+  //
   /** the table holding this connection */
   private final ConnectionTable owner;
 

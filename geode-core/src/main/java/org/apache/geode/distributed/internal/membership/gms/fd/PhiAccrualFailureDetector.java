@@ -17,6 +17,7 @@
 package org.apache.geode.distributed.internal.membership.gms.fd;
 
 import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -61,6 +62,7 @@ public class PhiAccrualFailureDetector {
 
   private final HeartbeatHistory heartbeatHistory;
   private final AtomicReference<Long> lastTimestampMillis = new AtomicReference<Long>();
+  private final AtomicLong heartbeatsRecorded = new AtomicLong();
 
   /**
    * @param threshold A low threshold is prone to generate many wrong suspicions but ensures a quick
@@ -71,20 +73,17 @@ public class PhiAccrualFailureDetector {
    *
    * @param maxSampleSize Number of samples to use for calculation of mean and standard deviation of
    *        inter-arrival times.
-   *
    * @param minStdDeviationMillis Minimum standard deviation to use for the normal distribution used
    *        when calculating phi.
    *        Too low standard deviation might result in too much sensitivity for sudden, but normal,
    *        deviations
    *        in heartbeat inter arrival times.
-   *
    * @param acceptableHeartbeatPauseMillis Duration corresponding to number of potentially
    *        lost/delayed
    *        heartbeats that will be accepted before considering it to be an anomaly.
    *        This margin is important to be able to survive sudden, occasional, pauses in heartbeat
    *        arrivals, due to for example garbage collect or network drop.
-   *
-   * @param firstHeartbeatEstimateMillis Bootstrap the stats with heartbeats that corresponds to
+   * @param firstHeartbeatIntervalMillis Bootstrap the stats with heartbeats that corresponds to
    *        to this duration, with a with rather high standard deviation (since environment is
    *        unknown
    *        in the beginning)
@@ -93,11 +92,11 @@ public class PhiAccrualFailureDetector {
    *        Note for Geode use: this class was originally called PhiAccuralFailureDetector and is
    *        from
    *        https://github.com/komamitsu/phi-accural-failure-detector
-   *        </p>
    */
   protected PhiAccrualFailureDetector(double threshold, int maxSampleSize,
       double minStdDeviationMillis,
-      long acceptableHeartbeatPauseMillis, long firstHeartbeatEstimateMillis) {
+      long acceptableHeartbeatPauseMillis,
+      long firstHeartbeatIntervalMillis) {
     if (threshold <= 0) {
       throw new IllegalArgumentException("Threshold must be > 0: " + threshold);
     }
@@ -112,9 +111,9 @@ public class PhiAccrualFailureDetector {
       throw new IllegalArgumentException(
           "Acceptable heartbeat pause millis must be >= 0: " + acceptableHeartbeatPauseMillis);
     }
-    if (firstHeartbeatEstimateMillis <= 0) {
+    if (firstHeartbeatIntervalMillis <= 0) {
       throw new IllegalArgumentException(
-          "First heartbeat value must be > 0: " + firstHeartbeatEstimateMillis);
+          "First heartbeat value must be > 0: " + firstHeartbeatIntervalMillis);
     }
 
     this.threshold = threshold;
@@ -122,16 +121,10 @@ public class PhiAccrualFailureDetector {
     this.acceptableHeartbeatPauseMillis = acceptableHeartbeatPauseMillis;
 
     heartbeatHistory = new HeartbeatHistory(maxSampleSize);
-    for (int i = 0; i < maxSampleSize; i++) {
-      heartbeatHistory.add(acceptableHeartbeatPauseMillis);
-    }
+    long stdDeviationMillis = firstHeartbeatIntervalMillis / 4;
+    heartbeatHistory.add(firstHeartbeatIntervalMillis - stdDeviationMillis)
+        .add(firstHeartbeatIntervalMillis + stdDeviationMillis);
 
-    // long stdDeviationMillis = acceptableHeartbeatPauseMillis / 4;
-    // heartbeatHistory.add(acceptableHeartbeatPauseMillis - stdDeviationMillis)
-    // .add(acceptableHeartbeatPauseMillis + stdDeviationMillis);
-
-    // Bruce: record the estimate as the last timestamp received
-    lastTimestampMillis.set(firstHeartbeatEstimateMillis);
   }
 
   private double ensureValidStdDeviation(double stdDeviationMillis) {
@@ -174,25 +167,26 @@ public class PhiAccrualFailureDetector {
     return isAvailable(System.currentTimeMillis());
   }
 
-  public int heartbeatCount() {
-    return this.heartbeatHistory.size();
+  public long heartbeatsRecorded() {
+    return heartbeatsRecorded.get();
   }
 
   public synchronized void heartbeat(long timestampMillis) {
     Long lastTimestampMillis = this.lastTimestampMillis.getAndSet(timestampMillis);
     /** bruce s.: for Apache Geode, don't record duplicate heartbeats */
-    if (lastTimestampMillis != null && lastTimestampMillis == timestampMillis) {
+    if (lastTimestampMillis != null && lastTimestampMillis >= timestampMillis) {
       return;
     }
     if (lastTimestampMillis != null) {
       long interval = timestampMillis - lastTimestampMillis;
       if (isAvailable(timestampMillis)) {
         heartbeatHistory.add(interval);
+        heartbeatsRecorded.incrementAndGet();
       }
     }
   }
 
-  public long getLastTimestampMillis() {
+  public Long getLastTimestampMillis() {
     return lastTimestampMillis.get();
   }
 
@@ -202,6 +196,10 @@ public class PhiAccrualFailureDetector {
 
   public void heartbeat() {
     heartbeat(System.currentTimeMillis());
+  }
+
+  public List<Long> getIntervalHistory() {
+    return heartbeatHistory.intervals;
   }
 
   public static class Builder {
@@ -260,7 +258,8 @@ public class PhiAccrualFailureDetector {
     }
 
     public double variance() {
-      return ((double) squaredIntervalSum.get() / intervals.size()) - (mean() * mean());
+      double mean = mean();
+      return ((double) squaredIntervalSum.get() / intervals.size()) - (mean * mean);
     }
 
     public double stdDeviation() {
@@ -277,10 +276,6 @@ public class PhiAccrualFailureDetector {
       intervalSum.addAndGet(interval);
       squaredIntervalSum.addAndGet(pow2(interval));
       return this;
-    }
-
-    private int size() {
-      return intervals.size();
     }
 
     private long pow2(long x) {

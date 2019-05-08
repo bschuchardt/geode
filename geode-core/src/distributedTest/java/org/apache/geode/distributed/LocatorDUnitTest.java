@@ -92,7 +92,6 @@ import org.apache.geode.internal.cache.GemFireCacheImpl;
 import org.apache.geode.internal.logging.LocalLogWriter;
 import org.apache.geode.internal.logging.LogService;
 import org.apache.geode.internal.security.SecurableCommunicationChannel;
-import org.apache.geode.internal.tcp.Connection;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DUnitBlackboard;
 import org.apache.geode.test.dunit.DistributedTestUtils;
@@ -694,8 +693,9 @@ public class LocatorDUnitTest implements java.io.Serializable {
       // quorumLost should be invoked if we get a ForcedDisconnect in this situation
       assertThat(listener.quorumLostInvoked).describedAs("expected quorumLost to be invoked")
           .isTrue();
-      assertThat(listener.suspectReasons.contains(Connection.INITIATING_SUSPECT_PROCESSING))
-          .describedAs("expected suspect processing initiated by TCPConduit").isTrue();
+      System.out.println("suspectReasons=" + listener.suspectReasons);
+      assertThat(listener.suspectReasons.contains("Member isn't responding to heartbeat requests"))
+          .describedAs("expected suspect processing initiated by health monitor").isTrue();
     } finally {
       if (locator != null) {
         locator.stop();

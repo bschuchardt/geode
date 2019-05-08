@@ -760,7 +760,7 @@ public class GMSHealthMonitorJUnitTest {
     HeartbeatMessage hb = new HeartbeatMessage(-1);
     hb.setSender(mockMembers.get(0));
     gmsHealthMonitor.processMessage(hb);
-    assertEquals(2, gmsHealthMonitor.memberDetectors.get(hb.getSender()).heartbeatCount());
+    assertEquals(0, gmsHealthMonitor.memberDetectors.get(hb.getSender()).heartbeatsRecorded());
 
     // a sick member will not take action on a Suspect message from another member
     SuspectMembersMessage smm = mock(SuspectMembersMessage.class);
