@@ -36,7 +36,7 @@ public class AdaptiveAccrualFailureDetectorTest {
     AdaptiveAccrualFailureDetector detector =
         new AdaptiveAccrualFailureDetector(threshold, historySize, heartbeatInterval);
     long heartbeatTime = 0;
-    for (int i=0; i<historySize; i++) {
+    for (int i = 0; i < historySize; i++) {
       now += heartbeatInterval;
       detector.heartbeat(now);
     }
