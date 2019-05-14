@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.isA;
@@ -53,6 +54,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Timer;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -213,27 +215,6 @@ public class GMSHealthMonitorJUnitTest {
     assertEquals(mockMembers.get(myAddressIndex + 1), gmsHealthMonitor.getNextNeighbor());
   }
 
-  @Test
-  public void testHMNextNeighborAfterTimeout() throws Exception {
-    System.out.println("testHMNextNeighborAfterTimeout starting");
-
-    installAView();
-    InternalDistributedMember initialNeighbor = mockMembers.get(myAddressIndex + 1);
-
-    await("wait for new neighbor")
-        .until(() -> gmsHealthMonitor.getNextNeighbor() != initialNeighbor);
-    InternalDistributedMember neighbor = gmsHealthMonitor.getNextNeighbor();
-
-    // neighbor should change. In order to not be a flaky test we don't demand
-    // that it be myAddressIndex+2 but just require that the neighbor being
-    // monitored has changed
-    System.out.println("testHMNextNeighborAfterTimeout ending");
-    Assert.assertNotNull(gmsHealthMonitor.getView());
-    Assert.assertNotEquals("neighbor to not be " + neighbor + "; my ID is "
-        + mockMembers.get(myAddressIndex) + ";  view=" + gmsHealthMonitor.getView(),
-        initialNeighbor, neighbor);
-  }
-
   /**
    * it checks neighbor before member-timeout, it should be same
    */
@@ -281,7 +262,7 @@ public class GMSHealthMonitorJUnitTest {
     gmsHealthMonitor.started();
 
     gmsHealthMonitor.installView(v);
-
+    System.out.println("installAView finishing");
     return v;
   }
 
@@ -302,6 +283,7 @@ public class GMSHealthMonitorJUnitTest {
     long startTime = System.currentTimeMillis();
     installAView();
     InternalDistributedMember neighbor = gmsHealthMonitor.getNextNeighbor();
+    assertFalse(neighbor.equals(joinLeave.getMemberID()));
 
     await().until(() -> gmsHealthMonitor.isSuspectMember(neighbor));
     long endTime = System.currentTimeMillis();
@@ -353,7 +335,7 @@ public class GMSHealthMonitorJUnitTest {
 
     gmsHealthMonitor.installView(v);
 
-    ArrayList<InternalDistributedMember> recipient = new ArrayList<InternalDistributedMember>();
+    ArrayList<InternalDistributedMember> recipient = new ArrayList<>();
     recipient.add(mockMembers.get(0));
     ArrayList<SuspectRequest> as = new ArrayList<SuspectRequest>();
     SuspectRequest sr = new SuspectRequest(mockMembers.get(1), "Not Responding");// removing member
@@ -384,11 +366,12 @@ public class GMSHealthMonitorJUnitTest {
     when(joinLeave.getMemberID()).thenReturn(mockMembers.get(0)); // coordinator and local member
     gmsHealthMonitor.started();
 
+    System.out.println("installing view " + v);
     gmsHealthMonitor.installView(v);
 
-    ArrayList<InternalDistributedMember> recipient = new ArrayList<InternalDistributedMember>();
+    ArrayList<InternalDistributedMember> recipient = new ArrayList<>();
     recipient.add(mockMembers.get(0));
-    ArrayList<SuspectRequest> as = new ArrayList<SuspectRequest>();
+    ArrayList<SuspectRequest> as = new ArrayList<>();
     SuspectRequest sr = new SuspectRequest(mockMembers.get(1), "Not Responding");// removing member
                                                                                  // 1
     as.add(sr);
@@ -398,7 +381,7 @@ public class GMSHealthMonitorJUnitTest {
     long preProcess = System.currentTimeMillis();
     gmsHealthMonitor.processMessage(sm);
 
-    await("waiting for remove(member) to be invoked")
+    await("waiting for remove(member) to be invoked").atMost(20, TimeUnit.SECONDS)
         .untilAsserted(
             () -> verify(joinLeave, atLeastOnce()).remove(any(InternalDistributedMember.class),
                 any(String.class)));
@@ -508,6 +491,8 @@ public class GMSHealthMonitorJUnitTest {
 
       gmsHealthMonitor.setNextNeighbor(v, memberToCheck);
       assertNotEquals(memberToCheck, gmsHealthMonitor.getNextNeighbor());
+
+      gmsHealthMonitor.contactedBy(memberToCheck);
 
       boolean retVal = gmsHealthMonitor.checkIfAvailable(memberToCheck, "Not responding", true);
 
@@ -630,7 +615,7 @@ public class GMSHealthMonitorJUnitTest {
     boolean available = gmsHealthMonitor.checkIfAvailable(memberToCheck, "Not responding", false);
     assertFalse(available);
     verify(joinLeave, never()).remove(isA(InternalDistributedMember.class), isA(String.class));
-    assertFalse(gmsHealthMonitor.isSuspectMember(memberToCheck));
+    assertTrue(gmsHealthMonitor.isSuspectMember(memberToCheck));
   }
 
 
@@ -764,6 +749,7 @@ public class GMSHealthMonitorJUnitTest {
     NetView v = new NetView(mockMembers.get(0), 2, mockMembers);
     gmsHealthMonitor.installView(v);
     gmsHealthMonitor.beSick();
+    gmsHealthMonitor.playDead();
 
     // a sick member will not respond to a heartbeat request
     HeartbeatRequestMessage req = new HeartbeatRequestMessage(mockMembers.get(0), 10);
@@ -775,7 +761,7 @@ public class GMSHealthMonitorJUnitTest {
     HeartbeatMessage hb = new HeartbeatMessage(-1);
     hb.setSender(mockMembers.get(0));
     gmsHealthMonitor.processMessage(hb);
-    assertTrue(gmsHealthMonitor.memberTimeStamps.get(hb.getSender()) == null);
+    assertNull(gmsHealthMonitor.memberDetectors.get(hb.getSender()));
 
     // a sick member will not take action on a Suspect message from another member
     SuspectMembersMessage smm = mock(SuspectMembersMessage.class);

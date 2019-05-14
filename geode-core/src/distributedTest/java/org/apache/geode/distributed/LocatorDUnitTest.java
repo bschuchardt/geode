@@ -97,6 +97,7 @@ import org.apache.geode.distributed.internal.tcpserver.LocatorCancelException;
 import org.apache.geode.internal.AvailablePort;
 import org.apache.geode.internal.AvailablePortHelper;
 import org.apache.geode.internal.logging.LogService;
+import org.apache.geode.internal.security.SecurableCommunicationChannel;
 import org.apache.geode.internal.tcp.Connection;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DUnitBlackboard;
@@ -637,11 +638,26 @@ public class LocatorDUnitTest implements Serializable {
 
     logger.info("waiting for my distributed system to disconnect due to partition detection");
 
-    await().until(() -> !system.isConnected());
-
-    if (system.isConnected()) {
-      fail(
-          "Distributed system did not disconnect as expected - network partition detection is broken");
+      if (system.isConnected()) {
+        fail(
+            "Distributed system did not disconnect as expected - network partition detection is broken");
+      }
+      // quorumLost should be invoked if we get a ForcedDisconnect in this situation
+      assertThat(listener.quorumLostInvoked).describedAs("expected quorumLost to be invoked")
+          .isTrue();
+      System.out.println("suspectReasons=" + listener.suspectReasons);
+      assertThat(listener.suspectReasons.contains("Member isn't responding to heartbeat requests"))
+          .describedAs("expected suspect processing initiated by health monitor").isTrue();
+    } finally {
+      if (locator != null) {
+        locator.stop();
+      }
+      LogWriter bLogger = new LocalLogWriter(ALL.intLevel(), System.out);
+      bLogger.info("<ExpectedException action=remove>service failure</ExpectedException>");
+      bLogger
+          .info("<ExpectedException action=remove>java.net.ConnectException</ExpectedException>");
+      bLogger.info(
+          "<ExpectedException action=remove>org.apache.geode.ForcedDisconnectException</ExpectedException>");
     }
     // quorumLost should be invoked if we get a ForcedDisconnect in this situation
     assertThat(listener.quorumLostInvoked).describedAs("expected quorumLost to be invoked")

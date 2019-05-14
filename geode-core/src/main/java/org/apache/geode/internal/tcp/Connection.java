@@ -121,10 +121,10 @@ public class Connection implements Runnable {
   @MakeNotStatic
   private static final AtomicLong idCounter = new AtomicLong(1);
 
-  /** string used as the reason for initiating suspect processing */
-  public static final String INITIATING_SUSPECT_PROCESSING =
-      "member unexpectedly shut down shared, unordered connection";
-
+  // /** string used as the reason for initiating suspect processing */
+  // public static final String INITIATING_SUSPECT_PROCESSING =
+  // "member unexpectedly shut down shared, unordered connection";
+  //
   /** the table holding this connection */
   private final ConnectionTable owner;
 
@@ -1861,12 +1861,12 @@ public class Connection implements Runnable {
    * initiate suspect processing if a shared/ordered connection is lost and we're not shutting down
    */
   private void initiateSuspicionIfSharedUnordered() {
-    if (this.isReceiver && this.handshakeRead && !this.preserveOrder && this.sharedResource) {
-      if (!this.owner.getConduit().getCancelCriterion().isCancelInProgress()) {
-        this.owner.getDM().getMembershipManager().suspectMember(this.getRemoteAddress(),
-            INITIATING_SUSPECT_PROCESSING);
-      }
-    }
+    // if (this.isReceiver && this.handshakeRead && !this.preserveOrder && this.sharedResource) {
+    // if (!this.owner.getConduit().getCancelCriterion().isCancelInProgress()) {
+    // this.owner.getDM().getMembershipManager().suspectMember(this.getRemoteAddress(),
+    // INITIATING_SUSPECT_PROCESSING);
+    // }
+    // }
   }
 
   /**
