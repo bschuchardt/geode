@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.isA;
@@ -760,7 +761,7 @@ public class GMSHealthMonitorJUnitTest {
     HeartbeatMessage hb = new HeartbeatMessage(-1);
     hb.setSender(mockMembers.get(0));
     gmsHealthMonitor.processMessage(hb);
-    assertEquals(0, gmsHealthMonitor.memberDetectors.get(hb.getSender()).heartbeatsRecorded());
+    assertNull(gmsHealthMonitor.memberDetectors.get(hb.getSender()));
 
     // a sick member will not take action on a Suspect message from another member
     SuspectMembersMessage smm = mock(SuspectMembersMessage.class);

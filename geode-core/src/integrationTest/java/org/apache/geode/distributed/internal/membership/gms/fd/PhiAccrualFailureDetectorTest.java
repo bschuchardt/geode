@@ -34,7 +34,7 @@ public class PhiAccrualFailureDetectorTest {
       long timestampMillis = now + i * 1000;
 
       if (i > 290) {
-        double phi = failureDetector.phi(timestampMillis);
+        double phi = failureDetector.availabilityProbability(timestampMillis);
         System.out.println("for interval " + i + ", phi=" + phi);
         if (i == 291) {
           assertTrue(1 < phi && phi < 3);
@@ -64,14 +64,14 @@ public class PhiAccrualFailureDetectorTest {
         continue;
       } else if (i > 200) {
         if (i % 5 == 0) {
-          double phi = failureDetector.phi(timestampMillis);
+          double phi = failureDetector.availabilityProbability(timestampMillis);
           assertTrue(0.1 < phi && phi < 0.5);
           assertTrue(failureDetector.isAvailable(timestampMillis));
           continue;
         }
       }
       failureDetector.heartbeat(timestampMillis);
-      double phi = failureDetector.phi(timestampMillis);
+      double phi = failureDetector.availabilityProbability(timestampMillis);
       System.out.println("for interval " + i + ", phi=" + phi);
       assertTrue("for " + i + ", expected phi<0.1 but was " + phi, phi < 0.1);
       assertTrue(failureDetector.isAvailable(timestampMillis));
@@ -98,9 +98,11 @@ public class PhiAccrualFailureDetectorTest {
       }
       l = Math.abs(l);
       heartbeatTime = now + (heartbeatInterval * l);
-      System.out.printf("heartbeat %d phi= %s%n", l, detector.phi(heartbeatTime));
+      System.out.printf("heartbeat %d phi= %s%n", l,
+          detector.availabilityProbability(heartbeatTime));
     }
-    assertFalse("phi=" + detector.phi(heartbeatTime), detector.isAvailable(heartbeatTime));
+    assertFalse("phi=" + detector.availabilityProbability(heartbeatTime),
+        detector.isAvailable(heartbeatTime));
   }
 
 }

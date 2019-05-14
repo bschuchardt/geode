@@ -1122,20 +1122,7 @@ public class SystemAdmin {
         return;
       }
     }
-    System.out.println("  " + v.toString());
-    if (details) {
-      System.out.print("  values=");
-      double[] snapshots = v.getSnapshots();
-      for (int i = 0; i < snapshots.length; i++) {
-        System.out.print(' ');
-        System.out.print(snapshots[i]);
-      }
-      System.out.println();
-      String desc = v.getDescriptor().getDescription();
-      if (desc != null && desc.length() > 0) {
-        System.out.println("    " + desc);
-      }
-    }
+    v.printStats();
   }
 
   /**
@@ -1249,7 +1236,7 @@ public class SystemAdmin {
               }
             }
             for (Map.Entry<CombinedResources, List<StatValue>> me : allSpecsMap.entrySet()) {
-              System.out.println(me.getKey());
+//              System.out.println(me.getKey());
               for (StatValue v : me.getValue()) {
                 printStatValue(v, startTime, endTime, nofilter, persec, persample, prunezeros,
                     details);

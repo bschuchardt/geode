@@ -143,7 +143,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
   /**
    * Timestamp at which we last had contact from a member
    */
-  final ConcurrentMap<InternalDistributedMember, PhiAccrualFailureDetector> memberDetectors =
+  final ConcurrentMap<InternalDistributedMember, FailureDetector> memberDetectors =
       new ConcurrentHashMap<>();
 
   /**
@@ -267,7 +267,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
           logger.info(
               "Failure detector has noticed a JVM pause and is giving all members a heartbeat");
           for (InternalDistributedMember member : myView.getMembers()) {
-            PhiAccrualFailureDetector detector = memberDetectors.get(member);
+            FailureDetector detector = memberDetectors.get(member);
             if (detector != null) {
               detector.heartbeat(currentTimeStamp);
             }
@@ -277,8 +277,8 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
 
         InternalDistributedMember neighbour = nextNeighbor;
         if (neighbour != null) {
-          PhiAccrualFailureDetector detector =
-              getOrCreatePhiAccrualFailureDetector(neighbour);
+          FailureDetector detector =
+              getOrCreateFailureDetector(neighbour);
           verifyHeartbeat(neighbour, detector);
         }
 
@@ -288,18 +288,20 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
     }
 
     private void verifyHeartbeat(InternalDistributedMember member,
-        PhiAccrualFailureDetector detector) {
+        FailureDetector detector) {
       if (!detector.isAvailable(currentTimeStamp)) {
         logger.warn("ERNIE & BRUCE: initiating checkMember from the health monitor for "
             + "{} with phi={}, last heartbeat={} heartbeats recorded={}",
-            member, detector.phi(currentTimeStamp), detector.getLastTimestampMillis() == null
+            member, detector.availabilityProbability(currentTimeStamp),
+            detector.getLastTimestampMillis() == null
                 ? "none" : new Date(detector.getLastTimestampMillis()),
             detector.heartbeatsRecorded());
         checkMember(member);
       } else {
         logger.info("ERNIE & BRUCE: verifyHeartbeat found {} is available with phi={}"
             + " last heartbeat={} heartbeats recorded={}",
-            member, detector.phi(currentTimeStamp), detector.getLastTimestampMillis() == null
+            member, detector.availabilityProbability(currentTimeStamp),
+            detector.getLastTimestampMillis() == null
                 ? "none" : new Date(detector.getLastTimestampMillis()),
             detector.heartbeatsRecorded());
         if (detector.getLastTimestampMillis() != null &&
@@ -426,7 +428,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
    * Record member activity at a specified time
    */
   private void contactedBy(InternalDistributedMember sender, long timeStamp) {
-    PhiAccrualFailureDetector detector = memberDetectors.get(sender);
+    FailureDetector detector = memberDetectors.get(sender);
     if (detector != null) {
       detector.heartbeat(timeStamp);
       List<Long> intervalHistory = detector.getIntervalHistory();
@@ -444,20 +446,30 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
   }
 
 
-  public PhiAccrualFailureDetector getOrCreatePhiAccrualFailureDetector(
+  public FailureDetector getOrCreateFailureDetector(
       InternalDistributedMember member) {
-    PhiAccrualFailureDetector detector = GMSHealthMonitor.this.memberDetectors.get(member);
+    FailureDetector detector = GMSHealthMonitor.this.memberDetectors.get(member);
 
     if (detector == null) {
       // it's okay to not synchronize here - if we happen to create another detector
       // for this member in another thread it will be pretty equivalent to the one created here
-      final int threshold = Integer.getInteger("geode.phiAccrualThreshold", 5);
-      final int sampleSize = Integer.getInteger("geode.phiAccrualSampleSize", 200);
-      final long minStdDev = Long.getLong("geode.phiAccrualMinimumStandardDeviation",
-          memberTimeout / 10);
-      // have tried acceptableHeartbeatPauseMillis=0, memberTimeout/2 and /4
-      detector = new PhiAccrualFailureDetector(
-          threshold, sampleSize, minStdDev, memberTimeout / 4, memberTimeout);
+      String detectorType = System.getProperty("gemfire.failure-detector", "phi");
+      if (detectorType.equals("phi")) {
+        final int threshold = Integer.getInteger("geode.phiAccrualThreshold", 5);
+        final int sampleSize = Integer.getInteger("geode.phiAccrualSampleSize", 200);
+        final long minStdDev = Long.getLong("geode.phiAccrualMinimumStandardDeviation",
+            memberTimeout / 10);
+        // have tried acceptableHeartbeatPauseMillis=0, memberTimeout/2 and /4
+        detector = new PhiAccrualFailureDetector(
+            threshold, sampleSize, minStdDev, memberTimeout / 4, memberTimeout);
+      } else {
+        final double threshold =
+            Double.parseDouble(System.getProperty("geode.failureDetectionThreshold", "0.99"));
+        final int sampleSize = Integer.getInteger("geode.heartbeatSampleSize", 200);
+        detector = new AdaptiveAccrualFailureDetector(
+            threshold, sampleSize, memberTimeout / 4);
+      }
+
       logger.info(
           "ERNIE & BRUCE: created a new failure detector for {} with lastTimestamp={} and recorded heartbeats={}",
           member, detector.getLastTimestampMillis(), detector.heartbeatsRecorded());
@@ -544,8 +556,9 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
           if (pingResp.getResponseMsg() == null) {
             pingResp.wait(memberTimeout);
           }
-          PhiAccrualFailureDetector detector = memberDetectors.get(member);
-          if (detector != null && detector.getLastTimestampMillis() > startTime) {
+          FailureDetector detector = memberDetectors.get(member);
+          if (detector != null && detector.getLastTimestampMillis() != null
+              && detector.getLastTimestampMillis() > startTime) {
             return true;
           }
           if (pingResp.getResponseMsg() == null) {
@@ -655,7 +668,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
           this.stats.incTcpFinalCheckResponsesReceived();
         }
         if (b == OK) {
-          PhiAccrualFailureDetector detector = memberDetectors.get(suspectMember);
+          FailureDetector detector = memberDetectors.get(suspectMember);
           if (detector != null) {
             detector.heartbeat();
           }
@@ -1186,7 +1199,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
 
     }
     // we got heartbeat lets update timestamp
-    getOrCreatePhiAccrualFailureDetector(m.getSender());
+    getOrCreateFailureDetector(m.getSender());
     contactedBy(m.getSender(), System.currentTimeMillis());
   }
 
@@ -1391,7 +1404,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
       }
 
       if (!pinged && !isStopping) {
-        PhiAccrualFailureDetector detector = memberDetectors.get(mbr);
+        FailureDetector detector = memberDetectors.get(mbr);
         if (detector == null || detector.getLastTimestampMillis() == null
             || detector.getLastTimestampMillis() < startTime) {
           logger.info("Availability check failed for member {}", mbr);

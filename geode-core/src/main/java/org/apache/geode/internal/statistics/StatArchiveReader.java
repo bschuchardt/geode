@@ -541,6 +541,8 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
      * Returns a description of this statistic.
      */
     StatDescriptor getDescriptor();
+
+    void printStats();
   }
 
   protected abstract static class AbstractValue implements StatValue {
@@ -562,6 +564,12 @@ public class StatArchiveReader implements StatArchiveFormat, AutoCloseable {
       if (!statsValid) {
         getSnapshots();
       }
+    }
+
+    @Override
+    public void printStats() {
+      calcStats();
+      System.out.format("%s,%s,%s,%s\n", min, max, avg, stddev);
     }
 
     @Override
