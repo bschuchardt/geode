@@ -921,6 +921,8 @@ public class Connection implements Runnable {
               logger.warn("Unable to form a TCP/IP connection to {} in over {} seconds",
                   remoteAddr, (ackTimeout) / 1000);
             }
+            logger.info("BRUCE: timed out creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={} now={}",
+                remoteAddr, startTime, ackTimeout, ackSATimeout, now);
             mgr.suspectMember(remoteAddr,
                 "Unable to form a TCP/IP connection in a reasonable amount of time");
             suspected = true;
@@ -932,6 +934,8 @@ public class Connection implements Runnable {
           }
         } else if (!suspected && (startTime > 0) && (ackTimeout > 0)
             && (startTime + ackTimeout < now)) {
+          logger.info("BRUCE: timed out(2) creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={} now={}",
+              remoteAddr, startTime, ackTimeout, ackSATimeout, now);
           mgr.suspectMember(remoteAddr,
               "Unable to form a TCP/IP connection in a reasonable amount of time");
           suspected = true;
@@ -3468,7 +3472,7 @@ public class Connection implements Runnable {
   /**
    * answers whether this connection is used for ordered message delivery
    */
-  boolean getPreserveOrder() {
+  public boolean isPreserveOrder() {
     return preserveOrder;
   }
 

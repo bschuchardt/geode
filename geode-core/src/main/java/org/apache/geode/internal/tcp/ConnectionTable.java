@@ -33,6 +33,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.logging.log4j.Logger;
+import org.vibur.objectpool.ConcurrentPool;
+import org.vibur.objectpool.PoolObjectFactory;
+import org.vibur.objectpool.util.ConcurrentLinkedQueueCollection;
 
 import org.apache.geode.SystemFailure;
 import org.apache.geode.annotations.internal.MakeNotStatic;
@@ -104,13 +107,19 @@ public class ConnectionTable {
    * threadOrderedConnMap. The value is an ArrayList since we can have any number of connections
    * with the same key.
    */
-  private ConcurrentMap threadConnectionMap;
+  private ConcurrentMap<DistributedMember, List<Connection>> threadConnectionMap;
 
   /**
    * Used for all non-ordered messages. Only connections used for sending messages, and receiving
    * acks, will be put in this map.
    */
   protected final Map unorderedConnectionMap = new ConcurrentHashMap();
+
+  /**
+   * Map of pools of available connections.  The connection pools are also responsible
+   * for creating new ordered connections that can be checked out by threads.
+   */
+  protected final Map<DistributedMember, ConcurrentPool<Connection>> connectionPools = new ConcurrentHashMap<>();
 
   /**
    * Used for all accepted connections. These connections are read only; we never send messages,
@@ -451,10 +460,10 @@ public class ConnectionTable {
     Connection result = null;
 
     // Look for result in the thread local
-    Map m = (Map) this.threadOrderedConnMap.get();
-    if (m == null) {
+    Map thisThreadsConnectionMap = this.threadOrderedConnMap.get();
+    if (thisThreadsConnectionMap == null) {
       // First time for this thread. Create thread local
-      m = new HashMap();
+      thisThreadsConnectionMap = new HashMap();
       synchronized (this.threadConnMaps) {
         if (this.closed) {
           owner.getCancelCriterion().checkCancelInProgress(null);
@@ -468,28 +477,50 @@ public class ConnectionTable {
             it.remove();
           }
         } // for
-        this.threadConnMaps.add(new WeakReference(m)); // ref added for bug 38011
+        this.threadConnMaps.add(new WeakReference(thisThreadsConnectionMap)); // ref added for bug 38011
       } // synchronized
-      this.threadOrderedConnMap.set(m);
+      this.threadOrderedConnMap.set(thisThreadsConnectionMap);
     } else {
       // Consult thread local.
-      synchronized (m) {
-        result = (Connection) m.get(id);
+      synchronized (thisThreadsConnectionMap) {
+        result = (Connection) thisThreadsConnectionMap.get(id);
       }
       if (result != null && result.timedOut) {
         result = null;
       }
     }
-    if (result != null)
+    if (result != null) {
       return result;
-
-    // OK, we have to create a new connection.
-    result = Connection.createSender(owner.getMembershipManager(), this, true /* preserveOrder */,
-        id, false /* shared */, startTime, ackTimeout, ackSATimeout);
-    if (logger.isDebugEnabled()) {
-      logger.debug("ConnectionTable: created an ordered connection: {}", result);
     }
-    this.owner.getStats().incSenders(false/* shared */, true /* preserveOrder */);
+
+//    // OK, we have to create a new connection.
+//    result = Connection.createSender(owner.getMembershipManager(), this, true /* preserveOrder */,
+//        id, false /* shared */, startTime, ackTimeout, ackSATimeout);
+//    if (logger.isDebugEnabled()) {
+//      logger.debug("ConnectionTable: created an ordered connection: {}", result);
+//    }
+//    this.owner.getStats().incSenders(false/* shared */, true /* preserveOrder */);
+
+    ConcurrentPool<Connection> pool = null;
+
+    while (result == null) {
+      pool =  connectionPools.get(id);
+      if (pool == null) {
+        pool = createConnectionPool(id, startTime, ackTimeout, ackSATimeout);
+        ConcurrentPool<Connection> existingPool = connectionPools.putIfAbsent(id, pool);
+        if (existingPool != null) {
+          pool.close();
+          pool = existingPool;
+        }
+      }
+//      logger.info("BRUCE: getting connection from pool {} of size {}", id, pool.remainingCreated());
+      result = pool.take();
+//      logger.info("BRUCE: retrieved connection {} from pool", result.hashCode());
+      if (result.timedOut) {
+        result = null;
+      }
+    }
+
 
     // Update the list of connections owned by this thread....
 
@@ -501,33 +532,84 @@ public class ConnectionTable {
       return null;
     }
 
-    ArrayList al = (ArrayList) this.threadConnectionMap.get(id);
-    if (al == null) {
+    List<Connection> connectionList = this.threadConnectionMap.get(id);
+    if (connectionList == null) {
       // First connection for this DistributedMember. Make sure list for this
       // stub is created if it isn't already there.
-      al = new ArrayList();
-
-      // Since it's a concurrent map, we just try to put it and then
-      // return whichever we got.
-      Object o = this.threadConnectionMap.putIfAbsent(id, al);
-      if (o != null) {
-        al = (ArrayList) o;
+      connectionList = new ArrayList();
+      List<Connection> existing = this.threadConnectionMap.putIfAbsent(id, connectionList);
+      if (existing != null) {
+        connectionList = existing;
       }
     }
 
     // Add our Connection to the list
-    synchronized (al) {
-      al.add(result);
+    synchronized (connectionList) {
+      connectionList.add(result);
     }
 
     // Finally, add the connection to our thread local map.
-    synchronized (m) {
-      m.put(id, result);
+    synchronized (thisThreadsConnectionMap) {
+      thisThreadsConnectionMap.put(id, result);
     }
 
     scheduleIdleTimeout(result);
     return result;
   }
+
+  private ConcurrentPool<Connection> createConnectionPool(
+      DistributedMember id, long startTime, long ackTimeout, long ackSATimeout) {
+
+    PoolObjectFactory<Connection> factory = new PoolObjectFactory<Connection>() {
+      @Override
+      public Connection create() {
+        Connection result = null;
+        try {
+//          logger.info("BRUCE: creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={}",
+//              id, System.currentTimeMillis(), ackTimeout, ackSATimeout);
+          result = Connection.createSender(owner.getMembershipManager(), ConnectionTable.this, true /* preserveOrder */,
+              id, false /* shared */, System.currentTimeMillis(), ackTimeout, ackSATimeout);
+        } catch (IOException e) {
+          logger.warn("unable to create peer-to-peer connection to "+id, e);
+          return null;
+        }
+        if (logger.isDebugEnabled()) {
+          logger.debug("ConnectionTable: created an ordered connection: {}", result);
+        }
+        owner.getStats().incSenders(false/* shared */, true /* preserveOrder */);
+
+        // Update the list of connections owned by this thread....
+
+        if (threadConnectionMap == null) {
+          // This instance is being destroyed; fail the operation
+          closeCon(
+              "Connection table being destroyed",
+              result);
+          return null;
+        }
+        return result;
+      }
+
+      @Override
+      public boolean readyToTake(Connection obj) {
+        return true;
+      }
+
+      @Override
+      public boolean readyToRestore(Connection obj) {
+        return true;
+      }
+
+      @Override
+      public void destroy(Connection obj) {
+        closeCon("destroying pooled connection", obj);
+      }
+    };
+
+    ConcurrentPool<Connection> pool = new ConcurrentPool(new ConcurrentLinkedQueueCollection<Connection>(), factory, 10, Integer.MAX_VALUE/2, false);
+    return pool;
+  }
+
 
   /** schedule an idle-connection timeout task */
   private void scheduleIdleTimeout(Connection conn) {
@@ -589,10 +671,12 @@ public class ConnectionTable {
     }
     Connection result = null;
     boolean threadOwnsResources = threadOwnsResources();
-    if (!preserveOrder || !threadOwnsResources) {
+    if (!preserveOrder) {
+//      logger.debug("BRUCE: allocating a shared unordered connection to {}", id);
       result = getSharedConnection(id, threadOwnsResources, preserveOrder, startTime, ackTimeout,
           ackSATimeout);
     } else {
+//      logger.debug("BRUCE: allocating a pooled ordered connection to {}", id);
       result = getThreadOwnedConnection(id, startTime, ackTimeout, ackSATimeout);
     }
     if (result != null) {
@@ -988,7 +1072,7 @@ public class ConnectionTable {
   }
 
   public void removeAndCloseThreadOwnedSockets() {
-    Map m = (Map) this.threadOrderedConnMap.get();
+    Map m = this.threadOrderedConnMap.get();
     if (m != null) {
       // Static cleanup may intervene; we MUST synchronize.
       synchronized (m) {
@@ -1032,7 +1116,7 @@ public class ConnectionTable {
 
         for (Iterator it = al.iterator(); it.hasNext();) {
           Connection conn = (Connection) it.next();
-          if (!conn.isSharedResource() && conn.getOriginatedHere() && conn.getPreserveOrder()) {
+          if (!conn.isSharedResource() && conn.getOriginatedHere() && conn.isPreserveOrder()) {
             result.put(Long.valueOf(conn.getUniqueId()), Long.valueOf(conn.getMessagesSent()));
           }
         }
@@ -1053,7 +1137,7 @@ public class ConnectionTable {
     }
     for (Iterator it = r.iterator(); it.hasNext();) {
       Connection con = (Connection) it.next();
-      if (!con.stopped && !con.isClosing() && !con.getOriginatedHere() && con.getPreserveOrder()
+      if (!con.stopped && !con.isClosing() && !con.getOriginatedHere() && con.isPreserveOrder()
           && member.equals(con.getRemoteAddress())) {
         Long state = (Long) connectionStates.remove(Long.valueOf(con.getUniqueId()));
         if (state != null) {
@@ -1090,32 +1174,17 @@ public class ConnectionTable {
     return this.owner.getDM();
   }
 
-  // public boolean isShuttingDown() {
-  // return this.owner.isShuttingDown();
-  // }
-
-  // protected void cleanupHighWater() {
-  // cleanup(highWater);
-  // }
-
-  // protected void cleanupLowWater() {
-  // cleanup(lowWater);
-  // }
-
-  // private void cleanup(int maxConnections) {
-  /*
-   * if (maxConnections == 0 || maxConnections >= connections.size()) { return; } while
-   * (connections.size() > maxConnections) { Connection oldest = null; synchronized(connections) {
-   * for (Iterator iter = connections.values().iterator(); iter.hasNext(); ) { Connection c =
-   * (Connection)iter.next(); if (oldest == null || c.getTimeStamp() < oldest.getTimeStamp()) {
-   * oldest = c; } } } // sanity check - don't close anything fresher than 10 seconds or // we'll
-   * start thrashing if (oldest.getTimeStamp() > (System.currentTimeMillis() - 10000)) { if
-   * (owner.lowWaterConnectionCount > 0) { owner.lowWaterConnectionCount += 10; } if
-   * (owner.highWaterConnectionCount > 0) { owner.highWaterConnectionCount += 10; } new Object[] {
-   * owner.lowWaterConnectionCount, owner.highWaterConnectionCount }); break; } if (oldest != null)
-   * { oldest.close(); } }
-   */
-  // }
+  public void releaseConnection(Connection con) {
+    if (con.isPreserveOrder()) {
+      Map threadConnections = threadOrderedConnMap.get();
+      threadConnections.remove(con.getRemoteAddress());
+      if (!con.isSocketClosed()) {
+        ConcurrentPool<Connection> connectionPool = connectionPools.get(con.getRemoteAddress());
+        connectionPool.restore(con);
+//        logger.info("BRUCE: returned connection to pool {}.  Size is now {}", con.getRemoteAddress(), connectionPool.remainingCreated());
+      }
+    }
+  }
 
   /*
    * public void dumpConnectionTable() { Iterator iter = connectionMap.keySet().iterator(); while
