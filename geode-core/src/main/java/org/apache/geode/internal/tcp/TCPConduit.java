@@ -980,6 +980,10 @@ public class TCPConduit implements Runnable {
     return this.conTable.getBufferPool();
   }
 
+  public void releaseConnection(Connection con) {
+    conTable.releaseConnection(con);
+  }
+
   protected class Stopper extends CancelCriterion {
 
     @Override

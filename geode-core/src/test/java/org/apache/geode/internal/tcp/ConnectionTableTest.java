@@ -96,19 +96,19 @@ public class ConnectionTableTest {
     assertEquals(1, connectionTable.getNumberOfReceivers());
   }
 
-  @Test
-  public void testThreadOwnedSocketsAreRemoved() throws Exception {
-    Boolean wantsResources = ConnectionTable.getThreadOwnsResourcesRegistration();
-    ConnectionTable.threadWantsOwnResources();
-    try {
-      Map<DistributedMember, Connection> threadConnectionMap = new HashMap<>();
-      connectionTable.threadOrderedConnMap.set(threadConnectionMap);
-      ConnectionTable.releaseThreadsSockets();
-      assertEquals(0, threadConnectionMap.size());
-    } finally {
-      if (wantsResources != Boolean.FALSE) {
-        ConnectionTable.threadWantsSharedResources();
-      }
-    }
-  }
+//  @Test
+//  public void testThreadOwnedSocketsAreRemoved() throws Exception {
+//    Boolean wantsResources = ConnectionTable.getThreadOwnsResourcesRegistration();
+//    ConnectionTable.threadWantsOwnResources();
+//    try {
+//      Map<DistributedMember, Connection> threadConnectionMap = new HashMap<>();
+//      connectionTable.threadOrderedConnMap.set(threadConnectionMap);
+//      ConnectionTable.releaseThreadsSockets();
+//      assertEquals(0, threadConnectionMap.size());
+//    } finally {
+//      if (wantsResources != Boolean.FALSE) {
+//        ConnectionTable.threadWantsSharedResources();
+//      }
+//    }
+//  }
 }

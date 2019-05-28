@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 
+import cn.danielw.fop.Poolable;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelException;
@@ -137,6 +138,7 @@ public class Connection implements Runnable {
 
   /** true if connection is a shared resource that can be used by more than one thread */
   private boolean sharedResource;
+  private Poolable<Connection> poolableObject;
 
   public boolean isSharedResource() {
     return this.sharedResource;
@@ -1219,6 +1221,14 @@ public class Connection implements Runnable {
 
   public void setInputBuffer(ByteBuffer buffer) {
     this.inputBuffer = buffer;
+  }
+
+  public void setPoolableObject(Poolable<Connection> poolable) {
+    this.poolableObject = poolable;
+  }
+
+  public Poolable<Connection> getPoolable() {
+    return this.poolableObject;
   }
 
   private class BatchBufferFlusher extends Thread {
@@ -3468,7 +3478,7 @@ public class Connection implements Runnable {
   /**
    * answers whether this connection is used for ordered message delivery
    */
-  boolean getPreserveOrder() {
+  public boolean isPreserveOrder() {
     return preserveOrder;
   }
 

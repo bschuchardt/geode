@@ -346,6 +346,7 @@ public class DirectChannel {
 
         boolean sendingToGroup = cons.size() > 1;
         Connection permissionCon = null;
+        // todo remove all of the send-permission stuff
         if (sendingToGroup) {
           acquireGroupSendPermission(orderedMsg);
         } else {
@@ -453,6 +454,7 @@ public class DirectChannel {
       for (Iterator it = totalSentCons.iterator(); it.hasNext();) {
         Connection con = (Connection) it.next();
         con.setInUse(false, 0, 0, 0, null);
+        conduit.releaseConnection(con);
       }
     }
     if (failedCe != null) {
