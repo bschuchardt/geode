@@ -454,7 +454,6 @@ public class DirectChannel {
       for (Iterator it = totalSentCons.iterator(); it.hasNext();) {
         Connection con = (Connection) it.next();
         con.setInUse(false, 0, 0, 0, null);
-        logger.debug("BRUCE: releasing connection {} shared {} ordered {}", con, con.isSharedResource(), con.isPreserveOrder());
         conduit.releaseConnection(con);
       }
     }

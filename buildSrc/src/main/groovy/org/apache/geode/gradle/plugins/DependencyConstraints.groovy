@@ -154,6 +154,7 @@ class DependencyConstraints implements Plugin<Project> {
         api(group: 'org.springframework.ldap', name: 'spring-ldap-core', version: '2.3.2.RELEASE')
         api(group: 'org.springframework.shell', name: 'spring-shell', version: '1.2.0.RELEASE')
         api(group: 'org.vibur', name: 'vibur-object-pool', version: '23.0')
+        api(group: 'cn.danielw', name: 'fast-object-pool', version: '2.1.0')
         api(group: 'pl.pragmatists', name: 'JUnitParams', version: '1.1.0')
         api(group: 'redis.clients', name: 'jedis', version: '2.9.0')
         api(group: 'xerces', name: 'xercesImpl', version: '2.12.0')

@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 
+import cn.danielw.fop.Poolable;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelException;
@@ -137,6 +138,7 @@ public class Connection implements Runnable {
 
   /** true if connection is a shared resource that can be used by more than one thread */
   private boolean sharedResource;
+  private Poolable<Connection> poolableObject;
 
   public boolean isSharedResource() {
     return this.sharedResource;
@@ -921,8 +923,6 @@ public class Connection implements Runnable {
               logger.warn("Unable to form a TCP/IP connection to {} in over {} seconds",
                   remoteAddr, (ackTimeout) / 1000);
             }
-            logger.info("BRUCE: timed out creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={} now={}",
-                remoteAddr, startTime, ackTimeout, ackSATimeout, now);
             mgr.suspectMember(remoteAddr,
                 "Unable to form a TCP/IP connection in a reasonable amount of time");
             suspected = true;
@@ -934,8 +934,6 @@ public class Connection implements Runnable {
           }
         } else if (!suspected && (startTime > 0) && (ackTimeout > 0)
             && (startTime + ackTimeout < now)) {
-          logger.info("BRUCE: timed out(2) creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={} now={}",
-              remoteAddr, startTime, ackTimeout, ackSATimeout, now);
           mgr.suspectMember(remoteAddr,
               "Unable to form a TCP/IP connection in a reasonable amount of time");
           suspected = true;
@@ -1223,6 +1221,14 @@ public class Connection implements Runnable {
 
   public void setInputBuffer(ByteBuffer buffer) {
     this.inputBuffer = buffer;
+  }
+
+  public void setPoolableObject(Poolable<Connection> poolable) {
+    this.poolableObject = poolable;
+  }
+
+  public Poolable<Connection> getPoolable() {
+    return this.poolableObject;
   }
 
   private class BatchBufferFlusher extends Thread {
