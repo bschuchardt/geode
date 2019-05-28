@@ -37,9 +37,6 @@ import cn.danielw.fop.ObjectPool;
 import cn.danielw.fop.PoolConfig;
 import cn.danielw.fop.Poolable;
 import org.apache.logging.log4j.Logger;
-import org.vibur.objectpool.ConcurrentPool;
-import org.vibur.objectpool.PoolObjectFactory;
-import org.vibur.objectpool.util.ConcurrentLinkedQueueCollection;
 
 import org.apache.geode.SystemFailure;
 import org.apache.geode.annotations.internal.MakeNotStatic;
@@ -120,10 +117,11 @@ public class ConnectionTable {
   protected final Map unorderedConnectionMap = new ConcurrentHashMap();
 
   /**
-   * Map of pools of available connections.  The connection pools are also responsible
+   * Map of pools of available connections. The connection pools are also responsible
    * for creating new ordered connections that can be checked out by threads.
    */
-  protected final Map<DistributedMember, ObjectPool<Connection>> connectionPools = new ConcurrentHashMap<>();
+  protected final Map<DistributedMember, ObjectPool<Connection>> connectionPools =
+      new ConcurrentHashMap<>();
 
   /**
    * Used for all accepted connections. These connections are read only; we never send messages,
@@ -481,7 +479,8 @@ public class ConnectionTable {
             it.remove();
           }
         } // for
-        this.threadConnMaps.add(new WeakReference(thisThreadsConnectionMap)); // ref added for bug 38011
+        this.threadConnMaps.add(new WeakReference(thisThreadsConnectionMap)); // ref added for bug
+                                                                              // 38011
       } // synchronized
       this.threadOrderedConnMap.set(thisThreadsConnectionMap);
     } else {
@@ -497,18 +496,19 @@ public class ConnectionTable {
       return result;
     }
 
-//    // OK, we have to create a new connection.
-//    result = Connection.createSender(owner.getMembershipManager(), this, true /* preserveOrder */,
-//        id, false /* shared */, startTime, ackTimeout, ackSATimeout);
-//    if (logger.isDebugEnabled()) {
-//      logger.debug("ConnectionTable: created an ordered connection: {}", result);
-//    }
-//    this.owner.getStats().incSenders(false/* shared */, true /* preserveOrder */);
+    // // OK, we have to create a new connection.
+    // result = Connection.createSender(owner.getMembershipManager(), this, true /* preserveOrder
+    // */,
+    // id, false /* shared */, startTime, ackTimeout, ackSATimeout);
+    // if (logger.isDebugEnabled()) {
+    // logger.debug("ConnectionTable: created an ordered connection: {}", result);
+    // }
+    // this.owner.getStats().incSenders(false/* shared */, true /* preserveOrder */);
 
     ObjectPool<Connection> pool = null;
 
     while (result == null) {
-      pool =  connectionPools.get(id);
+      pool = connectionPools.get(id);
       if (pool == null) {
         pool = createConnectionPool(id, startTime, ackTimeout, ackSATimeout);
         ObjectPool<Connection> existingPool = connectionPools.putIfAbsent(id, pool);
@@ -521,11 +521,12 @@ public class ConnectionTable {
           pool = existingPool;
         }
       }
-//      logger.info("BRUCE: getting connection from pool {} of size {}", id, pool.remainingCreated());
+      // logger.info("BRUCE: getting connection from pool {} of size {}", id,
+      // pool.remainingCreated());
       Poolable<Connection> poolable = pool.borrowObject(true);
       result = poolable.getObject();
       result.setPoolableObject(poolable);
-//      logger.info("BRUCE: retrieved connection {} from pool", result.hashCode());
+      // logger.info("BRUCE: retrieved connection {} from pool", result.hashCode());
       if (result.timedOut) {
         result = null;
       }
@@ -563,8 +564,8 @@ public class ConnectionTable {
       thisThreadsConnectionMap.put(id, result);
     }
 
-    // idle timeout tasks are not needed with fast-object-pools.  They perform timeouts themselves
-//    scheduleIdleTimeout(result);
+    // idle timeout tasks are not needed with fast-object-pools. They perform timeouts themselves
+    // scheduleIdleTimeout(result);
     return result;
   }
 
@@ -576,12 +577,14 @@ public class ConnectionTable {
       public Connection create() {
         Connection result = null;
         try {
-//          logger.info("BRUCE: creating a new ordered connection to {} startTime={} ackTimeout={} ackSATimeout={}",
-//              id, System.currentTimeMillis(), ackTimeout, ackSATimeout);
-          result = Connection.createSender(owner.getMembershipManager(), ConnectionTable.this, true /* preserveOrder */,
+          // logger.info("BRUCE: creating a new ordered connection to {} startTime={} ackTimeout={}
+          // ackSATimeout={}",
+          // id, System.currentTimeMillis(), ackTimeout, ackSATimeout);
+          result = Connection.createSender(owner.getMembershipManager(), ConnectionTable.this,
+              true /* preserveOrder */,
               id, false /* shared */, System.currentTimeMillis(), ackTimeout, ackSATimeout);
         } catch (IOException e) {
-          logger.warn("unable to create peer-to-peer connection to "+id, e);
+          logger.warn("unable to create peer-to-peer connection to " + id, e);
           return null;
         }
         if (logger.isDebugEnabled()) {
@@ -684,11 +687,11 @@ public class ConnectionTable {
     Connection result = null;
     boolean threadOwnsResources = threadOwnsResources();
     if (!preserveOrder) {
-//      logger.debug("BRUCE: allocating a shared unordered connection to {}", id);
+      // logger.debug("BRUCE: allocating a shared unordered connection to {}", id);
       result = getSharedConnection(id, threadOwnsResources, preserveOrder, startTime, ackTimeout,
           ackSATimeout);
     } else {
-//      logger.debug("BRUCE: allocating a pooled ordered connection to {}", id);
+      // logger.debug("BRUCE: allocating a pooled ordered connection to {}", id);
       result = getThreadOwnedConnection(id, startTime, ackTimeout, ackSATimeout);
     }
     if (result != null) {
@@ -806,7 +809,7 @@ public class ConnectionTable {
     }
     closeReceivers(false);
 
-    for (ObjectPool<Connection> pool: this.connectionPools.values()) {
+    for (ObjectPool<Connection> pool : this.connectionPools.values()) {
       boolean interrupted = false;
       try {
         pool.shutdown();
@@ -1206,7 +1209,8 @@ public class ConnectionTable {
       if (!con.isSocketClosed()) {
         ObjectPool<Connection> connectionPool = connectionPools.get(con.getRemoteAddress());
         connectionPool.returnObject(con.getPoolable());
-//        logger.info("BRUCE: returned connection to pool {}.  Size is now {}", con.getRemoteAddress(), connectionPool.remainingCreated());
+        // logger.info("BRUCE: returned connection to pool {}. Size is now {}",
+        // con.getRemoteAddress(), connectionPool.remainingCreated());
       }
     }
   }
