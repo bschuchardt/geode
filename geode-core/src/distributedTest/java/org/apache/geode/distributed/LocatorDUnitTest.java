@@ -169,7 +169,7 @@ public class LocatorDUnitTest implements Serializable {
   @After
   public void tearDown() {
     for (VM vm : toArray(getController(), vm0, vm1, vm2, vm3, vm4)) {
-      vm.invoke(() -> {
+      vm.invoke("teardown", () -> {
         stopLocator();
         disconnectFromDS();
         system = null;
@@ -638,32 +638,15 @@ public class LocatorDUnitTest implements Serializable {
 
     logger.info("waiting for my distributed system to disconnect due to partition detection");
 
-      if (system.isConnected()) {
-        fail(
-            "Distributed system did not disconnect as expected - network partition detection is broken");
-      }
-      // quorumLost should be invoked if we get a ForcedDisconnect in this situation
-      assertThat(listener.quorumLostInvoked).describedAs("expected quorumLost to be invoked")
-          .isTrue();
-      System.out.println("suspectReasons=" + listener.suspectReasons);
-      assertThat(listener.suspectReasons.contains("Member isn't responding to heartbeat requests"))
-          .describedAs("expected suspect processing initiated by health monitor").isTrue();
-    } finally {
-      if (locator != null) {
-        locator.stop();
-      }
-      LogWriter bLogger = new LocalLogWriter(ALL.intLevel(), System.out);
-      bLogger.info("<ExpectedException action=remove>service failure</ExpectedException>");
-      bLogger
-          .info("<ExpectedException action=remove>java.net.ConnectException</ExpectedException>");
-      bLogger.info(
-          "<ExpectedException action=remove>org.apache.geode.ForcedDisconnectException</ExpectedException>");
+    await().until(() -> !system.isConnected());
+
+    if (system.isConnected()) {
+      fail(
+          "Distributed system did not disconnect as expected - network partition detection is broken");
     }
     // quorumLost should be invoked if we get a ForcedDisconnect in this situation
     assertThat(listener.quorumLostInvoked).describedAs("expected quorumLost to be invoked")
         .isTrue();
-    assertThat(listener.suspectReasons.contains(Connection.INITIATING_SUSPECT_PROCESSING))
-        .describedAs("expected suspect processing initiated by TCPConduit").isTrue();
   }
 
   /**
@@ -819,6 +802,7 @@ public class LocatorDUnitTest implements Serializable {
           mmgr.requestMemberRemoval(mem1, "test reasons");
           fail("It should have thrown exception in requestMemberRemoval");
         } catch (DistributedSystemDisconnectedException e) {
+          System.out.println("BRUCE: caught expected exception");
           assertThat(e).hasRootCauseInstanceOf(ForcedDisconnectException.class);
         } finally {
           hook.reset();

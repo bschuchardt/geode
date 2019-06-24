@@ -26,37 +26,10 @@ import org.apache.logging.log4j.Logger;
 import org.apache.geode.internal.logging.LogService;
 
 /**
- * <p>
- * Ported to Geode from https://github.com/komamitsu/phi-accural-failure-detector and modified
- * to use the Adaptive Accrual algorithm described here:
- * https://www.informatik.uni-augsburg.de/lehrstuehle/sik/publikationen/papers/2007_sac-dads_sat/paper.pdf
- *
- * Javadoc from the komamitsu repo follows...
- * </p>
- * <p>
- * This is a port of
- * https://github.com/akka/akka/blob/master/akka-remote/src/main/scala/akka/remote/PhiAccrualFailureDetector.scala
- *
- * Implementation of 'The Phi Accrual Failure Detector' by Hayashibara et al. as defined in their
- * paper:
- * [http://ddg.jaist.ac.jp/pub/HDY+04.pdf]
- * <p>
- * The suspicion level of failure is given by a value called φ (phi).
- * The basic idea of the φ failure detector is to express the value of φ on a scale that
- * is dynamically adjusted to reflect current network conditions. A configurable
- * threshold is used to decide if φ is considered to be a failure.
- * <p>
- * The value of φ is calculated as:
- *
- * <pre>
- * φ = -log10(1 - F(timeSinceLastHeartbeat)
- * </pre>
- *
- * where F is the cumulative distribution function of a normal distribution with mean
- * and standard deviation estimated from historical heartbeat inter-arrival times.
- *
+ * Patterned after the Cassandra accrual failure detector this class uses simplified
+ * calculations to form Phi
  */
-public class AdaptiveAccrualFailureDetector implements FailureDetector {
+public class ExponentialAccrualFailureDetector implements FailureDetector {
   private static final Logger logger = LogService.getLogger();
 
   private final double threshold;
@@ -64,6 +37,8 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
   private final HeartbeatHistory heartbeatHistory;
   private final AtomicReference<Long> lastTimestampMillis = new AtomicReference<Long>();
   private final AtomicLong heartbeatsRecorded = new AtomicLong();
+
+  private static final double PHI_MULTIPLIER = 1.0 / Math.log(10.0);
 
   /**
    * @param threshold A low threshold is prone to generate many wrong suspicions but ensures a quick
@@ -78,14 +53,9 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
    *        to this duration, with a with rather high standard deviation (since environment is
    *        unknown
    *        in the beginning)
-   *
-   *        <p>
-   *        Note for Geode use: this class was originally called PhiAccuralFailureDetector and is
-   *        from
-   *        https://github.com/komamitsu/phi-accural-failure-detector
    */
-  protected AdaptiveAccrualFailureDetector(double threshold, int maxSampleSize,
-      long firstHeartbeatIntervalMillis) {
+  protected ExponentialAccrualFailureDetector(double threshold, int maxSampleSize,
+                                              long firstHeartbeatIntervalMillis) {
     if (threshold <= 0) {
       throw new IllegalArgumentException("Threshold must be > 0: " + threshold);
     }
@@ -100,10 +70,7 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
     this.threshold = threshold;
 
     heartbeatHistory = new HeartbeatHistory(maxSampleSize);
-    long stdDeviationMillis = firstHeartbeatIntervalMillis / 4;
-    heartbeatHistory.add(firstHeartbeatIntervalMillis - stdDeviationMillis)
-        .add(firstHeartbeatIntervalMillis + stdDeviationMillis);
-
+    heartbeatHistory.add(firstHeartbeatIntervalMillis).add(firstHeartbeatIntervalMillis);
   }
 
   @Override
@@ -114,10 +81,10 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
     }
 
     long tDelta = timestampMillis - lastTimestampMillis;
-    double alpha = 1.1; // TODO -should be configurable
-    long Stdelta = heartbeatHistory.Stdelta(Math.round(tDelta * alpha));
-    long S = heartbeatHistory.size();
-    return (double) Stdelta / (double) S;
+    double mean = heartbeatHistory.mean();
+    double phi = (tDelta / mean);
+    phi = phi * phi;
+    return PHI_MULTIPLIER * phi;
   }
 
   @Override
@@ -141,7 +108,6 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
     if (lastTimestampMillis != null && lastTimestampMillis >= timestampMillis) {
       return;
     }
-    this.lastTimestampMillis.set(timestampMillis);
     if (lastTimestampMillis != null) {
       long interval = timestampMillis - lastTimestampMillis;
       if (isAvailable(timestampMillis)) {
@@ -172,7 +138,8 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
 
   private static class HeartbeatHistory {
     private final int maxSampleSize;
-    private final LinkedList<Long> intervals = new LinkedList<Long>();
+    private final LinkedList<Long> intervals = new LinkedList<>();
+    private final AtomicLong intervalSum = new AtomicLong();
 
     public HeartbeatHistory(int maxSampleSize) {
       if (maxSampleSize < 1) {
@@ -181,30 +148,20 @@ public class AdaptiveAccrualFailureDetector implements FailureDetector {
       this.maxSampleSize = maxSampleSize;
     }
 
+    public double mean() {
+      return ((double)intervalSum.get()) / ((double)intervals.size());
+    }
+
     public HeartbeatHistory add(long interval) {
       if (intervals.size() >= maxSampleSize) {
         Long dropped = intervals.pollFirst();
+        intervalSum.addAndGet(-dropped);
       }
       intervals.add(interval);
+      intervalSum.addAndGet(interval);
       return this;
     }
 
-    private long pow2(long x) {
-      return x * x;
-    }
-
-    public long Stdelta(long tdelta) {
-      long result = 0;
-      for (long interval : intervals) {
-        if (interval <= tdelta) {
-          result++;
-        }
-      }
-      return result;
-    }
-
-    public long size() {
-      return intervals.size();
-    }
   }
+
 }

@@ -255,7 +255,9 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
         }
 
         long oldTimeStamp = currentTimeStamp;
-        currentTimeStamp = System.currentTimeMillis();
+        long currentTime = System.currentTimeMillis();
+        // this is the start of interval to record member activity
+        GMSHealthMonitor.this.currentTimeStamp = currentTime;
 
         NetView myView = GMSHealthMonitor.this.currentView;
         if (myView == null) {
@@ -275,13 +277,15 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
           return;
         }
 
-        InternalDistributedMember neighbour = nextNeighbor;
-        if (neighbour != null) {
-          FailureDetector detector =
-              getOrCreateFailureDetector(neighbour);
-          verifyHeartbeat(neighbour, detector);
+        for (InternalDistributedMember member: myView.getMembers()) {
+          if (member.equals(localAddress)) {
+            continue;
+          }
+          if (isSuspectMember(member)) {
+            continue;
+          }
+          verifyHeartbeat(member, getOrCreateFailureDetector(member));
         }
-
       } catch (RuntimeException | Error ex) {
         logger.info("Health monitor encountered an exception", ex);
       }
@@ -428,7 +432,7 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
    * Record member activity at a specified time
    */
   private void contactedBy(InternalDistributedMember sender, long timeStamp) {
-    FailureDetector detector = memberDetectors.get(sender);
+    FailureDetector detector = getOrCreateFailureDetector(sender); //memberDetectors.get(sender);
     if (detector != null) {
       detector.heartbeat(timeStamp);
       List<Long> intervalHistory = detector.getIntervalHistory();
@@ -451,23 +455,27 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
     FailureDetector detector = GMSHealthMonitor.this.memberDetectors.get(member);
 
     if (detector == null) {
+      final int sampleSize = Integer.getInteger("geode.heartbeatSampleSize", 200);
       // it's okay to not synchronize here - if we happen to create another detector
       // for this member in another thread it will be pretty equivalent to the one created here
-      String detectorType = System.getProperty("gemfire.failure-detector", "phi");
+      String detectorType = System.getProperty("gemfire.failure-detector", "exponential");
       if (detectorType.equals("phi")) {
-        final int threshold = Integer.getInteger("geode.phiAccrualThreshold", 5);
-        final int sampleSize = Integer.getInteger("geode.phiAccrualSampleSize", 200);
+        final int threshold = Integer.getInteger("geode.failureDetectionThreshold", 5);
         final long minStdDev = Long.getLong("geode.phiAccrualMinimumStandardDeviation",
             memberTimeout / 10);
         // have tried acceptableHeartbeatPauseMillis=0, memberTimeout/2 and /4
         detector = new PhiAccrualFailureDetector(
             threshold, sampleSize, minStdDev, memberTimeout / 4, memberTimeout);
+      } else if (detectorType.equals("adaptive")) {
+        final double threshold =
+            Double.parseDouble(System.getProperty("geode.failureDetectionThreshold", "0.8"));
+        detector = new AdaptiveAccrualFailureDetector(
+            threshold, sampleSize, memberTimeout / 2);
       } else {
         final double threshold =
-            Double.parseDouble(System.getProperty("geode.failureDetectionThreshold", "0.99"));
-        final int sampleSize = Integer.getInteger("geode.heartbeatSampleSize", 200);
-        detector = new AdaptiveAccrualFailureDetector(
-            threshold, sampleSize, memberTimeout / 4);
+            Double.parseDouble(System.getProperty("geode.failureDetectionThreshold", "8"));
+        detector = new ExponentialAccrualFailureDetector(
+            threshold, sampleSize, memberTimeout / 2);
       }
 
       logger.info(
@@ -1174,6 +1182,9 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
     if (me == null || me.getVmViewId() >= 0 && m.getTarget().equals(me)) {
       HeartbeatMessage hm = new HeartbeatMessage(m.getRequestId());
       hm.setRecipient(m.getSender());
+      for(Map.Entry<InternalDistributedMember,FailureDetector> detectorEntry: memberDetectors.entrySet()) {
+        hm.addTimestamp(detectorEntry.getKey(), detectorEntry.getValue().getLastTimestampMillis());
+      }
       Set<InternalDistributedMember> membersNotReceivedMsg = services.getMessenger().send(hm);
       this.stats.incHeartbeatsSent();
       if (membersNotReceivedMsg != null && membersNotReceivedMsg.contains(m.getSender())) {
@@ -1201,6 +1212,11 @@ public class GMSHealthMonitor implements HealthMonitor, MessageHandler {
     // we got heartbeat lets update timestamp
     getOrCreateFailureDetector(m.getSender());
     contactedBy(m.getSender(), System.currentTimeMillis());
+    for (Map.Entry<InternalDistributedMember, Long> heartbeatEntry: m.getHeartbeats().entrySet()) {
+      if (!heartbeatEntry.getKey().equals(localAddress)) {
+        getOrCreateFailureDetector(heartbeatEntry.getKey()).heartbeat(heartbeatEntry.getValue());
+      }
+    }
   }
 
   /**

@@ -17,8 +17,11 @@ package org.apache.geode.distributed.internal.membership.gms.messages;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.geode.DataSerializer;
+import org.apache.geode.cache.client.internal.ProxyRegion;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.HighPriorityDistributionMessage;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
@@ -82,4 +85,5 @@ public class HeartbeatRequestMessage extends HighPriorityDistributionMessage {
     requestId = in.readInt();
     target = DataSerializer.readObject(in);
   }
+
 }

@@ -135,6 +135,7 @@ public class PhiAccrualFailureDetector implements FailureDetector {
   public synchronized double availabilityProbability(long timestampMillis) {
     Long lastTimestampMillis = this.lastTimestampMillis.get();
     if (lastTimestampMillis == null) {
+      this.lastTimestampMillis.set(timestampMillis);
       return 0.0;
     }
 

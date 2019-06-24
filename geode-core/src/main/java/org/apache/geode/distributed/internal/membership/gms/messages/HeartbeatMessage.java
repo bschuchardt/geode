@@ -17,9 +17,13 @@ package org.apache.geode.distributed.internal.membership.gms.messages;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
+import org.apache.geode.DataSerializer;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.HighPriorityDistributionMessage;
+import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
 import org.apache.geode.internal.Version;
 
 public class HeartbeatMessage extends HighPriorityDistributionMessage {
@@ -28,9 +32,11 @@ public class HeartbeatMessage extends HighPriorityDistributionMessage {
    * this is a periodic heartbeat message.
    */
   int requestId;
+  private Map<InternalDistributedMember, Long> heartbeats;
 
   public HeartbeatMessage(int id) {
     requestId = id;
+    heartbeats = new HashMap<>();
   }
 
   public HeartbeatMessage() {}
@@ -63,10 +69,23 @@ public class HeartbeatMessage extends HighPriorityDistributionMessage {
   @Override
   public void toData(DataOutput out) throws IOException {
     out.writeInt(requestId);
+    DataSerializer.writeHashMap(heartbeats, out);
   }
 
   @Override
   public void fromData(DataInput in) throws IOException, ClassNotFoundException {
     requestId = in.readInt();
+    heartbeats = DataSerializer.readHashMap(in);
   }
+
+  public Map<InternalDistributedMember, Long> getHeartbeats() {
+    return this.heartbeats;
+  }
+
+  public void addTimestamp(InternalDistributedMember key, Long lastTimestampMillis) {
+    if (lastTimestampMillis != null) {
+      heartbeats.put(key, lastTimestampMillis);
+    }
+  }
+
 }
