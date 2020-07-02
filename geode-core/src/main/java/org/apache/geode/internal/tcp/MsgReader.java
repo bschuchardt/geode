@@ -33,7 +33,7 @@ import org.apache.geode.logging.internal.log4j.api.LogService;
  *
  */
 public class MsgReader {
-  protected final Connection conn;
+  protected final ClusterConnection conn;
   protected final Header header = new Header();
   private final NioFilter ioFilter;
   private ByteBuffer peerNetData;
@@ -41,7 +41,7 @@ public class MsgReader {
 
 
 
-  MsgReader(Connection conn, NioFilter nioFilter, KnownVersion version) {
+  MsgReader(ClusterConnection conn, NioFilter nioFilter, KnownVersion version) {
     this.conn = conn;
     this.ioFilter = nioFilter;
     this.byteBufferInputStream =
@@ -49,20 +49,20 @@ public class MsgReader {
   }
 
   Header readHeader() throws IOException {
-    ByteBuffer unwrappedBuffer = readAtLeast(Connection.MSG_HEADER_BYTES);
+    ByteBuffer unwrappedBuffer = readAtLeast(ClusterConnection.MSG_HEADER_BYTES);
 
-    Assert.assertTrue(unwrappedBuffer.remaining() >= Connection.MSG_HEADER_BYTES);
+    Assert.assertTrue(unwrappedBuffer.remaining() >= ClusterConnection.MSG_HEADER_BYTES);
 
     int messageLength = unwrappedBuffer.getInt();
     /* nioMessageVersion = */
-    Connection.calcHdrVersion(messageLength);
-    messageLength = Connection.calcMsgByteSize(messageLength);
+    ClusterConnection.calcHdrVersion(messageLength);
+    messageLength = ClusterConnection.calcMsgByteSize(messageLength);
     byte messageType = unwrappedBuffer.get();
     short messageId = unwrappedBuffer.getShort();
 
-    boolean directAck = (messageType & Connection.DIRECT_ACK_BIT) != 0;
+    boolean directAck = (messageType & ClusterConnection.DIRECT_ACK_BIT) != 0;
     if (directAck) {
-      messageType &= ~Connection.DIRECT_ACK_BIT; // clear the ack bit
+      messageType &= ~ClusterConnection.DIRECT_ACK_BIT; // clear the ack bit
     }
 
     header.setFields(messageLength, messageType, messageId);
