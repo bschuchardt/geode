@@ -362,18 +362,29 @@ public class TCPConduit implements Runnable {
     InetAddress bindAddress = this.address;
 
     try {
-      if (serverPort <= 0) {
+      if (!useSSL()) {
+        if (serverPort <= 0) {
+          socket = socketCreator.createServerSocketUsingPortRange(bindAddress,
+              connectionRequestBacklog, isBindAddress,
+              true, 0, tcpPortRange);
+        } else {
+          ServerSocketChannel channel = ServerSocketChannel.open();
+          socket = channel.socket();
 
-        socket = socketCreator.createServerSocketUsingPortRange(bindAddress,
-            connectionRequestBacklog, isBindAddress,
-            true, 0, tcpPortRange);
+          InetSocketAddress inetSocketAddress =
+              new InetSocketAddress(isBindAddress ? bindAddress : null, serverPort);
+          socket.bind(inetSocketAddress, connectionRequestBacklog);
+        }
+        channel = socket.getChannel();
       } else {
-        ServerSocketChannel channel = ServerSocketChannel.open();
-        socket = channel.socket();
-
-        InetSocketAddress inetSocketAddress =
-            new InetSocketAddress(isBindAddress ? bindAddress : null, serverPort);
-        socket.bind(inetSocketAddress, connectionRequestBacklog);
+        if (serverPort <= 0) {
+          socket = socketCreator.createServerSocketUsingPortRange(bindAddress,
+              connectionRequestBacklog, isBindAddress,
+              false, -1, tcpPortRange, true);
+        } else {
+          socket = socketCreator.createServerSocket(serverPort,
+              connectionRequestBacklog, isBindAddress ? bindAddress : null);
+        }
       }
 
       try {
@@ -390,7 +401,6 @@ public class TCPConduit implements Runnable {
         logger.warn("Failed to set listener receiverBufferSize to {}",
             tcpBufferSize);
       }
-      channel = socket.getChannel();
       port = socket.getLocalPort();
     } catch (IOException io) {
       throw new ConnectionException(
@@ -558,8 +568,12 @@ public class TCPConduit implements Runnable {
 
       Socket othersock = null;
       try {
-        SocketChannel otherChannel = channel.accept();
-        othersock = otherChannel.socket();
+        if (channel != null) {
+          SocketChannel otherChannel = channel.accept();
+          othersock = otherChannel.socket();
+        } else {
+          othersock = socket.accept();
+        }
         if (stopped) {
           try {
             if (othersock != null) {
@@ -974,6 +988,10 @@ public class TCPConduit implements Runnable {
 
   public boolean useSSL() {
     return useSSL;
+  }
+
+  public boolean useDirectReceiveBuffers() {
+    return !useSSL();
   }
 
   public BufferPool getBufferPool() {

@@ -183,7 +183,7 @@ public class BufferPool {
     return newBuffer;
   }
 
-  ByteBuffer acquireDirectBuffer(BufferPool.BufferType type, int capacity) {
+  public ByteBuffer acquireDirectBuffer(BufferPool.BufferType type, int capacity) {
     switch (type) {
       case UNTRACKED:
         return ByteBuffer.allocate(capacity);
@@ -195,7 +195,7 @@ public class BufferPool {
     throw new IllegalArgumentException("Unexpected buffer type " + type.toString());
   }
 
-  ByteBuffer acquireNonDirectBuffer(BufferPool.BufferType type, int capacity) {
+  public ByteBuffer acquireNonDirectBuffer(BufferPool.BufferType type, int capacity) {
     switch (type) {
       case UNTRACKED:
         return ByteBuffer.allocate(capacity);
@@ -207,7 +207,7 @@ public class BufferPool {
     throw new IllegalArgumentException("Unexpected buffer type " + type.toString());
   }
 
-  void releaseBuffer(BufferPool.BufferType type, ByteBuffer buffer) {
+  public void releaseBuffer(BufferPool.BufferType type, ByteBuffer buffer) {
     switch (type) {
       case UNTRACKED:
         return;

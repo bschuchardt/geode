@@ -18,8 +18,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.net.Socket;
 import java.nio.ByteBuffer;
-import java.nio.channels.SocketChannel;
 
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -33,14 +33,14 @@ public class ConnectionTest {
   @Test
   public void shouldBeMockable() throws Exception {
     Connection mockConnection = mock(Connection.class);
-    SocketChannel channel = null;
+    Socket socket = null;
     ByteBuffer buffer = null;
     boolean forceAsync = true;
     DistributionMessage mockDistributionMessage = mock(DistributionMessage.class);
 
-    mockConnection.writeFully(channel, buffer, forceAsync, mockDistributionMessage);
+    mockConnection.writeFully(socket, buffer, forceAsync, mockDistributionMessage);
 
-    verify(mockConnection, times(1)).writeFully(channel, buffer, forceAsync,
+    verify(mockConnection, times(1)).writeFully(socket, buffer, forceAsync,
         mockDistributionMessage);
   }
 }
