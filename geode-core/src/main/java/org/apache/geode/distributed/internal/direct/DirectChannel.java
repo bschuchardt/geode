@@ -295,7 +295,8 @@ public class DirectChannel {
         List<?> sentCons; // used for cons we sent to this time
 
         final BaseMsgStreamer ms =
-            MsgStreamer.create(cons, msg, directReply, stats, getConduit().getBufferPool());
+            MsgStreamer.create(cons, msg, directReply, stats, getConduit().getBufferPool(),
+                true);
         try {
           startTime = 0;
           if (ackTimeout > 0) {
@@ -449,8 +450,9 @@ public class DirectChannel {
           if (ackTimeout > 0) {
             startTime = System.currentTimeMillis();
           }
-          Connection con = conduit.getConnection(destination, preserveOrder, retry, startTime,
-              ackTimeout, ackSDTimeout);
+          Connection con =
+              conduit.getConnection(destination, preserveOrder, retry, startTime,
+                  ackTimeout, ackSDTimeout);
 
           con.setInUse(true, startTime, 0, 0, null); // fix for bug#37657
           cons.add(con);

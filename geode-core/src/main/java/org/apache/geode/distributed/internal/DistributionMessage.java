@@ -415,7 +415,8 @@ public abstract class DistributionMessage
         && getProcessorType() == OperationExecutors.SERIAL_EXECUTOR
         && !isMembershipMessengerThread();
 
-    boolean forceInline = this.acker != null || getInlineProcess() || Connection.isDominoThread();
+    boolean forceInline =
+        this.acker != null || getInlineProcess() || Connection.isDominoThread();
 
     if (inlineProcess && !forceInline && isSharedReceiver()) {
       // If processing this message notify a serial gateway sender then don't do it inline.

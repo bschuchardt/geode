@@ -357,7 +357,8 @@ public class ConnectionTable {
    * @return the new Connection, or null if an error
    * @throws IOException if unable to create the connection
    */
-  private Connection getSharedConnection(InternalDistributedMember id, boolean scheduleTimeout,
+  private Connection getSharedConnection(InternalDistributedMember id,
+      boolean scheduleTimeout,
       boolean preserveOrder, long startTime, long ackTimeout, long ackSATimeout)
       throws IOException, DistributedSystemDisconnectedException {
 
@@ -431,7 +432,8 @@ public class ConnectionTable {
    * @return the connection, or null if an error
    * @throws IOException if the connection could not be created
    */
-  Connection getThreadOwnedConnection(InternalDistributedMember id, long startTime, long ackTimeout,
+  Connection getThreadOwnedConnection(InternalDistributedMember id, long startTime,
+      long ackTimeout,
       long ackSATimeout) throws IOException, DistributedSystemDisconnectedException {
     Connection result = null;
 
@@ -558,7 +560,8 @@ public class ConnectionTable {
    * @return the new Connection, or null if a problem
    * @throws IOException if the connection could not be created
    */
-  protected Connection get(InternalDistributedMember id, boolean preserveOrder, long startTime,
+  protected Connection get(InternalDistributedMember id, boolean preserveOrder,
+      long startTime,
       long ackTimeout, long ackSATimeout)
       throws IOException, DistributedSystemDisconnectedException {
     if (closed) {
@@ -1126,7 +1129,8 @@ public class ConnectionTable {
      * @param ackSATimeout the ms ack-severe-alert-threshold, or zero
      * @return the new connection
      */
-    private synchronized Connection waitForConnect(Membership mgr, long startTime, long ackTimeout,
+    private synchronized Connection waitForConnect(Membership mgr, long startTime,
+        long ackTimeout,
         long ackSATimeout) {
       if (connectingThread == Thread.currentThread()) {
         throw new ReenteredConnectException("This thread is already trying to connect");
