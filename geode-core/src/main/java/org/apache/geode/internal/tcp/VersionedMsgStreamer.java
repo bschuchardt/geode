@@ -33,8 +33,9 @@ class VersionedMsgStreamer extends MsgStreamer implements VersionedDataStream {
   private final Version version;
 
   VersionedMsgStreamer(List<?> cons, DistributionMessage msg, boolean directReply, DMStats stats,
-      BufferPool bufferPool, int sendBufferSize, Version version) {
-    super(cons, msg, directReply, stats, sendBufferSize, bufferPool);
+      int sendBufferSize, Version version, BufferPool bufferPool,
+      boolean useDirectBuffers) {
+    super(cons, msg, directReply, stats, sendBufferSize, bufferPool, useDirectBuffers);
     this.version = version;
   }
 

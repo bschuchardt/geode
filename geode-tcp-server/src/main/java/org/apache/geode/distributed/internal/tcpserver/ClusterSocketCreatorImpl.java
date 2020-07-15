@@ -54,6 +54,13 @@ public class ClusterSocketCreatorImpl implements ClusterSocketCreator {
     return createServerSocket(nport, backlog, bindAddr, -1, useSSL());
   }
 
+  @Override
+  public final ServerSocket createServerSocket(int nport, int backlog, InetAddress bindAddr,
+      int bufferSize)
+      throws IOException {
+    return createServerSocket(nport, backlog, bindAddr, bufferSize, useSSL());
+  }
+
   /**
    * Overridable method for creating a server socket. Override this if you are implementing
    * SSL communications or otherwise need to customize server socket creation.

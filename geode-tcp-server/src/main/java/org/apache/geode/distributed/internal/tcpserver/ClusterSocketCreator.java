@@ -48,6 +48,12 @@ public interface ClusterSocketCreator {
       throws IOException;
 
   /**
+   * Create a server socket that is bound to the given address
+   */
+  ServerSocket createServerSocket(int nport, int backlog, InetAddress bindAddr, int bufferSize)
+      throws IOException;
+
+  /**
    * Creates a connection to the given host/port. This method ignores any
    * custom client-side socket factory that may be installed.
    */

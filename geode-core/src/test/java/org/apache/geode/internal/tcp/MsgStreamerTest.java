@@ -32,6 +32,7 @@ import java.util.List;
 
 import javax.net.ssl.SSLException;
 
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.geode.distributed.internal.DMStats;
@@ -47,7 +48,14 @@ public class MsgStreamerTest {
   Connection connection1 = mock(Connection.class);
   Connection connection2 = mock(Connection.class);
 
+  @Before
+  public void before() {
+    when(connection1.getSendBufferSize()).thenReturn(30000);
+    when(connection2.getSendBufferSize()).thenReturn(30000);
+  }
+
   @Test
+
   public void create() {
     final BaseMsgStreamer msgStreamer = createMsgStreamer(false);
     assertThat(msgStreamer).isInstanceOf(MsgStreamer.class);
@@ -96,6 +104,6 @@ public class MsgStreamerTest {
     }
     List<Connection> connections = Arrays.asList(connection1, connection2);
 
-    return MsgStreamer.create(connections, message, false, stats, pool);
+    return MsgStreamer.create(connections, message, false, stats, pool, false);
   }
 }

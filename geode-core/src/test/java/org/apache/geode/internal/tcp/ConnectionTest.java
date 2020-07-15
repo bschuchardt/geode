@@ -25,7 +25,6 @@ import static org.mockito.Mockito.when;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
@@ -54,9 +53,9 @@ public class ConnectionTest {
     boolean forceAsync = true;
     DistributionMessage mockDistributionMessage = mock(DistributionMessage.class);
 
-    mockConnection.writeFully(channel, buffer, forceAsync, mockDistributionMessage);
+    mockConnection.nioWriteFully(channel, buffer, forceAsync, mockDistributionMessage);
 
-    verify(mockConnection, times(1)).writeFully(channel, buffer, forceAsync,
+    verify(mockConnection, times(1)).nioWriteFully(channel, buffer, forceAsync,
         mockDistributionMessage);
   }
 
@@ -84,6 +83,7 @@ public class ConnectionTest {
     when(tcpConduit.getDM()).thenReturn(distributionManager);
     when(tcpConduit.getSocketId()).thenReturn(new InetSocketAddress(getLocalHost(), 10337));
     when(tcpConduit.getStats()).thenReturn(dmStats);
+    when(tcpConduit.useNIO()).thenReturn(true);
 
     SocketChannel channel = SocketChannel.open();
 
@@ -95,7 +95,7 @@ public class ConnectionTest {
   }
 
   @Test
-  public void connectTimeoutIsShortWhenAlerting() throws UnknownHostException {
+  public void connectTimeoutIsShortWhenAlerting() throws Exception {
     ConnectionTable connectionTable = mock(ConnectionTable.class);
     DistributionConfig distributionConfig = mock(DistributionConfig.class);
     TCPConduit tcpConduit = mock(TCPConduit.class);
@@ -103,6 +103,7 @@ public class ConnectionTest {
     when(connectionTable.getConduit()).thenReturn(tcpConduit);
     when(distributionConfig.getMemberTimeout()).thenReturn(100);
     when(tcpConduit.getSocketId()).thenReturn(new InetSocketAddress(getLocalHost(), 12345));
+    when(tcpConduit.useNIO()).thenReturn(true);
 
     Connection connection = new Connection(connectionTable, mock(Socket.class));
 

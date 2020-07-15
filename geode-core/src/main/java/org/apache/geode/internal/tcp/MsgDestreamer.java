@@ -143,6 +143,21 @@ public class MsgDestreamer {
   }
 
   /**
+   * Adds a chunk to be deserialize
+   *
+   * @param b a byte array contains the bytes of the chunk
+   */
+  public void addChunk(byte[] b) throws IOException {
+    // if this destreamer has failed or this chunk is empty just return
+    if (this.failure == null && b != null && b.length > 0) {
+      // logit("addChunk length=" + b.length);
+      ByteBuffer bb = ByteBuffer.wrap(b);
+      this.t.addChunk(bb, b.length);
+      this.size += b.length;
+    }
+  }
+
+  /**
    * Returns the number of bytes added to this destreamer.
    */
   public int size() {
@@ -239,8 +254,7 @@ public class MsgDestreamer {
           ReplyProcessor21.initMessageRPId();
           final Version v = version;
           DataInputStream dis =
-              v == null ? new DataInputStream(this.is)
-                  : new VersionedDataInputStream(this.is, v);
+              v == null ? new DataInputStream(this.is) : new VersionedDataInputStream(this.is, v);
           long startSer = this.stats.startMsgDeserialization();
           setResult((DistributionMessage) InternalDataSerializer.readDSFID(dis));
           this.stats.endMsgDeserialization(startSer);

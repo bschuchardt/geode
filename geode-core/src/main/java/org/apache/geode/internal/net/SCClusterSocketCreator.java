@@ -42,12 +42,6 @@ class SCClusterSocketCreator extends ClusterSocketCreatorImpl {
     coreSocketCreator.handshakeIfSocketIsSSL(socket, timeout);
   }
 
-  public ServerSocket createServerSocket(int nport, int backlog, InetAddress bindAddr,
-      int socketBufferSize) throws IOException {
-    return createServerSocket(nport, backlog, bindAddr, socketBufferSize,
-        coreSocketCreator.useSSL());
-  }
-
   @Override
   protected ServerSocket createServerSocket(int nport, int backlog, InetAddress bindAddr,
       int socketBufferSize, boolean sslConnection) throws IOException {

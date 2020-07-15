@@ -16,33 +16,21 @@ package org.apache.geode.internal.tcp;
 
 import static org.apache.geode.distributed.ConfigurationProperties.LOCATORS;
 import static org.apache.geode.distributed.ConfigurationProperties.LOG_FILE;
-import static org.apache.geode.test.assertj.LogFileAssert.assertThat;
 import static org.apache.geode.test.dunit.IgnoredException.addIgnoredException;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 import static org.mockito.quality.Strictness.STRICT_STUBS;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.File;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.nio.ByteBuffer;
 import java.util.Properties;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
-import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.TemporaryFolder;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
 import org.apache.geode.cache.Cache;
-import org.apache.geode.distributed.internal.DistributionConfig;
-import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
-import org.apache.geode.internal.net.SocketCloser;
 import org.apache.geode.test.dunit.rules.CacheRule;
 import org.apache.geode.test.junit.categories.MembershipTest;
 
@@ -82,26 +70,27 @@ public class ConnectionIntegrationTest {
     cache.close();
   }
 
-  @Test
-  public void badHeaderMessageIsCorrectlyLogged() {
-    ConnectionTable connectionTable = mock(ConnectionTable.class);
-    DistributionConfig config = mock(DistributionConfig.class);
-    Socket socket = mock(Socket.class);
-    TCPConduit tcpConduit = mock(TCPConduit.class);
-
-    when(connectionTable.getConduit()).thenReturn(tcpConduit);
-    when(tcpConduit.getSocketId()).thenReturn(new InetSocketAddress("localhost", 1234));
-    when(config.getEnableNetworkPartitionDetection()).thenReturn(false);
-    when(tcpConduit.getConfig()).thenReturn(config);
-    when(tcpConduit.getMemberId()).thenReturn(new InternalDistributedMember("localhost", 2345));
-    when(connectionTable.getSocketCloser()).thenReturn(mock(SocketCloser.class));
-
-    Connection connection = new Connection(connectionTable, socket);
-    ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(new byte[] {99});
-    DataInputStream inputStream = new DataInputStream(byteArrayInputStream);
-
-    connection.readHandshakeForSender(inputStream, ByteBuffer.allocate(100));
-
-    assertThat(logFile).contains(EXPECTED_EXCEPTION_MESSAGE);
-  }
+  // BRUCE: this method doesn't exist in the old implementation of tcpconduit
+  // @Test
+  // public void badHeaderMessageIsCorrectlyLogged() throws IOException {
+  // ConnectionTable connectionTable = mock(ConnectionTable.class);
+  // DistributionConfig config = mock(DistributionConfig.class);
+  // Socket socket = mock(Socket.class);
+  // TCPConduit tcpConduit = mock(TCPConduit.class);
+  //
+  // when(connectionTable.getConduit()).thenReturn(tcpConduit);
+  // when(tcpConduit.getSocketId()).thenReturn(new InetSocketAddress("localhost", 1234));
+  // when(config.getEnableNetworkPartitionDetection()).thenReturn(false);
+  // when(tcpConduit.getConfig()).thenReturn(config);
+  // when(tcpConduit.getMemberId()).thenReturn(new InternalDistributedMember("localhost", 2345));
+  // when(connectionTable.getSocketCloser()).thenReturn(mock(SocketCloser.class));
+  //
+  // Connection connection = new Connection(connectionTable, socket);
+  // ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(new byte[] {99});
+  // DataInputStream inputStream = new DataInputStream(byteArrayInputStream);
+  //
+  // connection.readHandshakeForSender(inputStream, ByteBuffer.allocate(100));
+  //
+  // assertThat(logFile).contains(EXPECTED_EXCEPTION_MESSAGE);
+  // }
 }
