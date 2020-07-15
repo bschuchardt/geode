@@ -2489,7 +2489,6 @@ public class Connection implements Runnable {
           }
           return -1;
         }
-        logger.info("BRUCE: read {} bytes", bytesThisTime);
         bytesSoFar += bytesThisTime;
       } catch (InterruptedIOException io) {
         // Current thread has been interrupted. Regard it similar to an EOF
