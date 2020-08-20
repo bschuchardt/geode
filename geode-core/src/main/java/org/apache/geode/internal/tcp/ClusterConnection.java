@@ -1632,7 +1632,6 @@ public class ClusterConnection implements Runnable {
           } else {
             isInitialRead = false;
             if (!skipInitialRead) {
-              conduit.getStats().incFinalCheckResponsesReceived(); // BRUCE: remove stat
               amountRead = SocketUtils.readFromSocket(socket, buff, inputStream);
             } else {
               amountRead = buff.position();
@@ -1781,7 +1780,6 @@ public class ClusterConnection implements Runnable {
       }
 
       ioFilter = new NioPlainEngine(getBufferPool(), getConduit().useDirectBuffers(), inputStream);
-      ((NioPlainEngine) ioFilter).setStatistics(conduit.getStats());
     }
   }
 

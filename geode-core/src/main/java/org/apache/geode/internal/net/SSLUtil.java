@@ -41,7 +41,7 @@ public class SSLUtil {
    */
   protected static final String[] DEFAULT_ALGORITMS = {
       "TLSv1.3",
-      "TLSv1.2"}; // TLSv1.3 is not available in JDK 8 at this time
+      "TLSv1.2"};
 
 
 

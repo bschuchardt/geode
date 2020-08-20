@@ -14,6 +14,7 @@
  */
 package org.apache.geode.internal.tcp;
 
+import static org.apache.commons.lang3.SystemUtils.isJavaVersionAtLeast;
 import static org.apache.geode.distributed.internal.DistributionConfig.DEFAULT_MEMBERSHIP_PORT_RANGE;
 import static org.apache.geode.distributed.internal.DistributionConfig.DEFAULT_SOCKET_BUFFER_SIZE;
 import static org.apache.geode.distributed.internal.DistributionConfig.DEFAULT_SOCKET_LEASE_TIME;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.function.Function;
 
+import org.apache.commons.lang3.JavaVersion;
 import org.apache.logging.log4j.Logger;
 
 import org.apache.geode.CancelCriterion;
@@ -202,7 +204,7 @@ public class TCPConduit implements Runnable {
 
   private final Stopper stopper = new Stopper();
 
-  private boolean enableTLSOverNIO = Boolean.getBoolean("geode.enable-tls-nio");
+  private final boolean enableTLSOverNIO;
 
   /**
    * <p>
@@ -243,8 +245,8 @@ public class TCPConduit implements Runnable {
     this.isBindAddress = isBindAddress;
     this.port = port;
     directChannel = receiver;
-    stats = null;
-    config = null;
+    // TLS over new-IO has many issues before Java 11 so we use old-IO (SSLSocket)
+    enableTLSOverNIO = isJavaVersionAtLeast(JavaVersion.JAVA_11);
     membership = mgr;
     if (directChannel != null) {
       stats = directChannel.getDMStats();
