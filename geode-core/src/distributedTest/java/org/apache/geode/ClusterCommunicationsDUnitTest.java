@@ -63,6 +63,7 @@ import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
 import org.apache.geode.cache.Cache;
 import org.apache.geode.cache.CacheFactory;
+import org.apache.geode.cache.Region;
 import org.apache.geode.cache.RegionShortcut;
 import org.apache.geode.distributed.DistributedMember;
 import org.apache.geode.distributed.Locator;
@@ -152,7 +153,7 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
     for (int i = 1; i <= NUM_SERVERS; i++) {
       verifyCreatedEntry(getVM(i));
     }
-    for (int iteration = 1; iteration < 6; iteration++) {
+    for (int iteration = 1; iteration < 10; iteration++) {
       performUpdate(getVM(1));
     }
     for (int i = 1; i <= NUM_SERVERS; i++) {
@@ -252,11 +253,40 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
 
   private void performUpdate(VM memberVM) {
     memberVM.invoke("perform update", () -> {
-      DMStats stats = ((InternalDistributedSystem) cache.getDistributedSystem())
-          .getDistributionManager().getStats();
-      int reconnectAttempts = stats.getReconnectAttempts();
-      cache.getRegion(regionName).put("testKey", "updatedTestValue");
-      assertThat(stats.getReconnectAttempts()).isEqualTo(reconnectAttempts);
+//      DMStats stats = ((InternalDistributedSystem) cache.getDistributedSystem())
+//          .getDistributionManager().getStats();
+//      int reconnectAttempts = stats.getReconnectAttempts();
+      Region region = cache.getRegion(regionName);
+      byte[] value = new byte[30_000];
+      int numreps = 300_000;
+      Thread t1 = new Thread() {
+        public void run() {
+          for (int i=0; i<numreps; i++) {
+            region.put("testKey1", value/*"updatedTestValue"*/);
+          }
+        }
+      };
+      Thread t2 = new Thread() {
+        public void run() {
+          for (int i=0; i<numreps; i++) {
+            region.put("testKey2", value/*"updatedTestValue"*/);
+          }
+        }
+      };
+      Thread t3 = new Thread() {
+        public void run() {
+          for (int i=0; i<numreps; i++) {
+            region.put("testKey3", value/*"updatedTestValue"*/);
+          }
+        }
+      };
+      t1.start();
+      t2.start();
+      t3.start();
+      t1.join();
+      t2.join();
+      t3.join();
+//      assertThat(stats.getReconnectAttempts()).isEqualTo(reconnectAttempts);
     });
   }
 
@@ -274,8 +304,8 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
   }
 
   private void verifyUpdatedEntry(VM memberVM) {
-    memberVM.invoke("verify entry updated", () -> Assert.assertTrue(cache
-        .getRegion(regionName).containsValue("updatedTestValue")));
+//    memberVM.invoke("verify entry updated", () -> Assert.assertTrue(cache
+//        .getRegion(regionName).containsValue("updatedTestValue")));
   }
 
   private int createLocator(VM memberVM) {
@@ -285,7 +315,7 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
   private int createLocator(VM memberVM, boolean usingOldVersion) {
     return memberVM.invoke("create locator", () -> {
       // if you need to debug SSL communications use this property:
-      // System.setProperty("javax.net.debug", "all");
+//       System.setProperty("javax.net.debug", "all");
       System.setProperty(GMSJoinLeave.BYPASS_DISCOVERY_PROPERTY, "true");
       Properties dsProperties = getDistributedSystemProperties();
       try {
@@ -313,6 +343,7 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
   }
 
   public Properties getDistributedSystemProperties() {
+//    System.setProperty("javax.net.debug", "all");
     Properties properties = new Properties();
     properties.setProperty(ENABLE_CLUSTER_CONFIGURATION, "false");
     properties.setProperty(USE_CLUSTER_CONFIGURATION, "false");
@@ -330,7 +361,7 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
       properties.setProperty(SSL_TRUSTSTORE,
           createTempFileFromResource(getClass(), "server.keystore")
               .getAbsolutePath());
-      properties.setProperty(SSL_PROTOCOLS, "TLSv1.2");
+      properties.setProperty(SSL_PROTOCOLS, "TLSv1.3");
       properties.setProperty(SSL_KEYSTORE_PASSWORD, "password");
       properties.setProperty(SSL_TRUSTSTORE_PASSWORD, "password");
       properties.setProperty(SSL_REQUIRE_AUTHENTICATION, "true");
@@ -339,11 +370,11 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
   }
 
   enum RunConfiguration {
-    SHARED_CONNECTIONS(true, false, false),
+//    SHARED_CONNECTIONS(true, false, false),
     SHARED_CONNECTIONS_WITH_SSL(true, true, false),
-    UNSHARED_CONNECTIONS(false, false, false),
-    UNSHARED_CONNECTIONS_WITH_SSL(false, true, false),
-    UDP_CONNECTIONS(true, false, true);
+//    UNSHARED_CONNECTIONS(false, false, false),
+    UNSHARED_CONNECTIONS_WITH_SSL(false, true, false);
+//    UDP_CONNECTIONS(true, false, true);
 
     boolean useSSL;
     boolean conserveSockets;
