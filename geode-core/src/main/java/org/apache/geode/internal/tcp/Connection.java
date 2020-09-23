@@ -2705,6 +2705,7 @@ public class Connection implements Runnable {
   void writeFully(SocketChannel channel, ByteBuffer buffer, boolean forceAsync,
       DistributionMessage msg) throws IOException, ConnectionException {
     final DMStats stats = this.owner.getConduit().getStats();
+//    System.out.println("BRUCE: writeFully("+buffer.remaining()+")");
     if (!this.sharedResource) {
       stats.incTOSentMsg();
     }

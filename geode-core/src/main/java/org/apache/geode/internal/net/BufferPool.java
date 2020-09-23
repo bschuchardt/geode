@@ -86,6 +86,10 @@ public class BufferPool {
             }
           }
         } else if (bb.capacity() >= size) {
+//          System.out.println("BRUCE: reusing a direct buffer of size " + bb.capacity());
+//          if (bb.capacity() > 1024 * 1024) {
+//            Thread.dumpStack();
+//          }
           bb.rewind();
           bb.limit(size);
           return bb;
@@ -104,6 +108,7 @@ public class BufferPool {
         }
         ref = bufferQueue.poll();
       }
+//      System.out.println("BRUCE: allocating a direct buffer of size " + size);
       result = ByteBuffer.allocateDirect(size);
     } else {
       // if we are using heap buffers then don't bother with keeping them around

@@ -122,6 +122,10 @@ public class GMSMembershipManager implements MembershipManager, Manager {
   private final ThreadLocal<Boolean> forceUseUDPMessaging =
       ThreadLocal.withInitial(() -> Boolean.FALSE);
 
+  public DirectChannel getDirectChannel() {
+    return this.directChannel;
+  }
+
   /**
    * Trick class to make the startup synch more visible in stack traces
    *

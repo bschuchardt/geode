@@ -42,6 +42,7 @@ import java.io.DataOutput;
 import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -68,6 +69,7 @@ import org.apache.geode.distributed.Locator;
 import org.apache.geode.distributed.internal.ClusterDistributionManager;
 import org.apache.geode.distributed.internal.DMStats;
 import org.apache.geode.distributed.internal.DirectReplyProcessor;
+import org.apache.geode.distributed.internal.DistributionManager;
 import org.apache.geode.distributed.internal.DistributionMessage;
 import org.apache.geode.distributed.internal.InternalDistributedSystem;
 import org.apache.geode.distributed.internal.MessageWithReply;
@@ -75,8 +77,10 @@ import org.apache.geode.distributed.internal.ReplyException;
 import org.apache.geode.distributed.internal.ReplyMessage;
 import org.apache.geode.distributed.internal.SerialAckedMessage;
 import org.apache.geode.distributed.internal.membership.gms.membership.GMSJoinLeave;
+import org.apache.geode.distributed.internal.membership.gms.mgr.GMSMembershipManager;
 import org.apache.geode.internal.DSFIDFactory;
 import org.apache.geode.internal.cache.DirectReplyMessage;
+import org.apache.geode.internal.net.BufferPool;
 import org.apache.geode.test.dunit.Host;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.rules.DistributedRestoreSystemProperties;
@@ -253,9 +257,34 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
 
   private void performCreateWithLargeValue(VM memberVM) {
     memberVM.invoke("perform create", () -> {
-      byte[] value = new byte[SMALL_BUFFER_SIZE * 20];
-      Arrays.fill(value, (byte) 1);
-      cache.getRegion(regionName).put("testKey", value);
+      final DistributionManager
+          dm =
+          ((InternalDistributedSystem) cache.getDistributedSystem()).getDM();
+      final BufferPool
+          bufferPool =
+          ((GMSMembershipManager) dm.getMembershipManager()).getDirectChannel().getConduit()
+              .getBufferPool();
+      ByteBuffer buffers[] = new ByteBuffer[10];
+      for (int i=0; i<10; i++) {
+        ByteBuffer buffer = bufferPool.acquireDirectSenderBuffer(17 * 1024 * 1024);
+        buffers[i] = buffer;
+      }
+      for (int i=0; i<10; i++) {
+        bufferPool.releaseSenderBuffer(buffers[i]);
+      }
+      for (int turn=0; turn<100; turn++) {
+        Thread workThread = new Thread() {
+          public void run() {
+            byte[] value = new byte[17 * 1024 * 1024];
+            Arrays.fill(value, (byte) 1);
+            for (int i = 0; i < 10; i++) {
+              cache.getRegion(regionName).put("testKey", value);
+            }
+          }
+        };
+        workThread.start();
+        workThread.join();
+      }
     });
   }
 
@@ -317,9 +346,9 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
   }
 
   enum RunConfiguration {
-    SHARED_CONNECTIONS(true, false),
-    SHARED_CONNECTIONS_WITH_SSL(true, true),
-    UNSHARED_CONNECTIONS(false, false),
+//    SHARED_CONNECTIONS(true, false),
+//    SHARED_CONNECTIONS_WITH_SSL(true, true),
+//    UNSHARED_CONNECTIONS(false, false),
     UNSHARED_CONNECTIONS_WITH_SSL(false, true);
 
     boolean useSSL;
