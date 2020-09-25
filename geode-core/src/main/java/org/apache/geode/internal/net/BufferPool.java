@@ -108,7 +108,10 @@ public class BufferPool {
         }
         ref = bufferQueue.poll();
       }
-//      System.out.println("BRUCE: allocating a direct buffer of size " + size);
+      if (size > (1024 * 1024)) {
+        System.out.println("BRUCE: allocating a direct buffer of size " + size);
+        Thread.dumpStack();
+      }
       result = ByteBuffer.allocateDirect(size);
     } else {
       // if we are using heap buffers then don't bother with keeping them around
@@ -232,6 +235,10 @@ public class BufferPool {
    */
   private void releaseBuffer(ByteBuffer bb, boolean send) {
     if (bb.isDirect()) {
+      if (bb.capacity() > (1024 * 1024)) {
+        System.out.println("BRUCE: releasing a direct buffer of size " + bb.capacity());
+        Thread.dumpStack();
+      }
       BBSoftReference bbRef = new BBSoftReference(bb, send);
       bufferQueue.offer(bbRef);
     } else {

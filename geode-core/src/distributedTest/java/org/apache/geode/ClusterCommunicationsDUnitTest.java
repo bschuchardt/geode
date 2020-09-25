@@ -265,26 +265,25 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
           bufferPool =
           ((GMSMembershipManager) dm.getMembershipManager()).getDirectChannel().getConduit()
               .getBufferPool();
-      ByteBuffer buffers[] = new ByteBuffer[100];
-      for (int i=0; i<10; i++) {
-        ByteBuffer buffer = bufferPool.acquireDirectSenderBuffer(20 * 1024 * 1024);
-        buffers[i] = buffer;
-      }
-      for (int i=0; i<10; i++) {
-        bufferPool.releaseSenderBuffer(buffers[i]);
-      }
-      for (int turn=0; turn<100; turn++) {
+//      ByteBuffer buffers[] = new ByteBuffer[100];
+//      for (int i=0; i<10; i++) {
+//        ByteBuffer buffer = bufferPool.acquireDirectSenderBuffer(20 * 1024 * 1024);
+//        buffers[i] = buffer;
+//      }
+//      for (int i=0; i<10; i++) {
+//        bufferPool.releaseSenderBuffer(buffers[i]);
+//      }
+      byte[] value = new byte[17 * 1024 * 1024];
+      Arrays.fill(value, (byte) 1);
+      for (int turn=0; turn<1000; turn++) {
         Thread workThread = new Thread() {
           public void run() {
-            byte[] value = new byte[17 * 1024 * 1024];
-            Arrays.fill(value, (byte) 1);
-            for (int i = 0; i < 10; i++) {
-              cache.getRegion(regionName).put("testKey", value);
-            }
+            cache.getRegion(regionName).put("testKey", value);
           }
         };
         workThread.start();
         workThread.join();
+        try { Thread.sleep(2 * 1000); } catch (InterruptedException e) { return; }
       }
     });
   }
@@ -327,7 +326,7 @@ public class ClusterCommunicationsDUnitTest implements Serializable {
     properties.setProperty(USE_CLUSTER_CONFIGURATION, "false");
     properties.setProperty(NAME, "vm" + VM.getCurrentVMNum());
     properties.setProperty(CONSERVE_SOCKETS, "" + conserveSockets);
-    properties.setProperty(SOCKET_LEASE_TIME, "10000");
+    properties.setProperty(SOCKET_LEASE_TIME, "1000");
     properties.setProperty(SOCKET_BUFFER_SIZE, "" + SMALL_BUFFER_SIZE);
 
     if (useSSL) {
