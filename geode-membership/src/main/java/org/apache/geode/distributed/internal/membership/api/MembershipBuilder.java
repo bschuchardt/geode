@@ -15,7 +15,7 @@
 package org.apache.geode.distributed.internal.membership.api;
 
 
-import org.apache.geode.distributed.internal.membership.gms.MembershipBuilderImpl;
+import org.apache.geode.distributed.internal.membership.rapid.MembershipBuilderImpl;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
 import org.apache.geode.distributed.internal.tcpserver.TcpSocketCreator;
 import org.apache.geode.internal.serialization.DSFIDSerializer;

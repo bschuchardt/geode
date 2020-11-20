@@ -107,11 +107,11 @@ public class GMSMembership<ID extends MemberIdentifier> implements Membership<ID
    *
    * @see GMSMembership#startupLock
    */
-  static class EventProcessingLock {
+  public static class EventProcessingLock {
     public EventProcessingLock() {}
   }
 
-  static class StartupEvent<ID extends MemberIdentifier> {
+  public static class StartupEvent<ID extends MemberIdentifier> {
     static final int SURPRISE_CONNECT = 1;
     static final int VIEW = 2;
     static final int MESSAGE = 3;
@@ -196,7 +196,7 @@ public class GMSMembership<ID extends MemberIdentifier> implements Membership<ID
      *
      * @param d the message
      */
-    StartupEvent(Message<ID> d) {
+    public StartupEvent(Message<ID> d) {
       this.kind = MESSAGE;
       this.dmsg = d;
     }
@@ -1821,7 +1821,7 @@ public class GMSMembership<ID extends MemberIdentifier> implements Membership<ID
    * Class <code>BoundedLinkedHashMap</code> is a bounded <code>LinkedHashMap</code>. The bound is
    * the maximum number of entries the <code>BoundedLinkedHashMap</code> can contain.
    */
-  static class BoundedLinkedHashMap<K, V> extends LinkedHashMap<K, V> {
+  public static class BoundedLinkedHashMap<K, V> extends LinkedHashMap<K, V> {
     private static final long serialVersionUID = -3419897166186852692L;
 
     /**

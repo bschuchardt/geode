@@ -18,12 +18,20 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.InetAddress;
+import java.util.HashMap;
+import java.util.Map;
 
+import com.google.protobuf.ByteString;
+import org.apache.commons.lang3.SerializationException;
 import org.jgroups.util.UUID;
 
 import org.apache.geode.distributed.internal.membership.api.MemberData;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
+import org.apache.geode.internal.serialization.BufferDataOutputStream;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DSFIDSerializer;
 import org.apache.geode.internal.serialization.DeserializationContext;
 import org.apache.geode.internal.serialization.KnownVersion;
 import org.apache.geode.internal.serialization.SerializationContext;
@@ -37,7 +45,7 @@ import org.apache.geode.internal.serialization.VersioningIO;
  * Unfortunately it is also used in identifying client caches in a client/server
  * configuration and so contains weird things like a durable-id and a durable-timeout.
  */
-public class GMSMemberData implements MemberData, Comparable<GMSMemberData> {
+public class GMSMemberData implements MemberData, Comparable<GMSMemberData>, Serializable {
   /** The type for regular members */
   public static final int NORMAL_DM_TYPE = 10;
 
@@ -556,6 +564,7 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData> {
     out.writeShort(flags);
 
     StaticSerialization.writeInetAddress(inetAddr, out);
+    out.writeInt(directPort);
     out.writeInt(udpPort);
     out.writeInt(vmViewId);
     out.writeLong(uuidMSBs);
@@ -590,6 +599,7 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData> {
       // which is very expensive
       this.hostName = inetAddr.getHostAddress();
     }
+    this.directPort = in.readInt();
     this.udpPort = in.readInt();
     this.vmViewId = in.readInt();
     this.uuidMSBs = in.readLong();
@@ -644,5 +654,33 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData> {
   @Override
   public void setUniqueTag(String tag) {
     uniqueTag = tag;
+  }
+
+  /**
+   * Protobuf serialization
+   * @return
+   */
+  public ByteString asByteString(DSFIDSerializer serializer) {
+    BufferDataOutputStream out = new BufferDataOutputStream(KnownVersion.CURRENT);
+    SerializationContext context = serializer.createSerializationContext(out);
+    try {
+      writeEssentialData(out, context);
+    } catch (IOException e) {
+      throw new SerializationException("error serializing an identifier", e);
+    }
+    return ByteString.copyFrom(out.toByteBuffer());
+  }
+
+  /**
+   * Protobuf deserialization
+   */
+  public GMSMemberData(ByteString byteString, DSFIDSerializer serializer) {
+    ByteArrayDataInput input = new ByteArrayDataInput(byteString.toByteArray());
+    DeserializationContext context = serializer.createDeserializationContext(input);
+    try {
+      readEssentialData(input, context);
+    } catch (IOException | ClassNotFoundException e) {
+      throw new SerializationException("error serializing an identifier", e);
+    }
   }
 }

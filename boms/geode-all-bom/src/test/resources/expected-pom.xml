@@ -170,6 +170,12 @@
         <scope>compile</scope>
       </dependency>
       <dependency>
+        <groupId>com.vrg</groupId>
+        <artifactId>rapid</artifactId>
+        <version>1.0-SNAPSHOT</version>
+        <scope>compile</scope>
+      </dependency>
+      <dependency>
         <groupId>com.zaxxer</groupId>
         <artifactId>HikariCP</artifactId>
         <version>3.4.5</version>

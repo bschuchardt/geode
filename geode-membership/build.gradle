@@ -39,6 +39,9 @@ dependencies {
     //Jgroups is a core component of our membership system.
     implementation('org.jgroups:jgroups')
 
+    // VMware Research's Rapid membership implementation
+    implementation('com.vrg:rapid')
+
 
     testImplementation(project(':geode-junit'))
     testImplementation(project(':geode-concurrency-test'))
