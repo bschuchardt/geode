@@ -40,19 +40,19 @@ public class PrimaryHandler implements TcpHandler {
   private int locatorWaitTime;
 
   @FunctionalInterface
-  interface Sleeper {
+  public interface Sleeper {
     void sleep(long msToSleep) throws InterruptedException;
   }
 
   @FunctionalInterface
-  interface MillisecondProvider {
+  public interface MillisecondProvider {
     long millisecondTime();
   }
 
   private final MillisecondProvider millisecondProvider;
   private Sleeper sleeper;
 
-  PrimaryHandler(TcpHandler fallbackHandler, int locatorWaitTime,
+  public PrimaryHandler(TcpHandler fallbackHandler, int locatorWaitTime,
       MillisecondProvider millisecondProvider,
       Sleeper sleeper) {
     this.locatorWaitTime = locatorWaitTime;
@@ -125,7 +125,7 @@ public class PrimaryHandler implements TcpHandler {
     }
   }
 
-  synchronized boolean isHandled(Class<?> clazz) {
+  public synchronized boolean isHandled(Class<?> clazz) {
     return handlerMapping.containsKey(clazz);
   }
 

@@ -31,7 +31,6 @@ import org.apache.geode.distributed.internal.membership.gms.AuthenticatorNoOp;
 import org.apache.geode.distributed.internal.membership.gms.DefaultMembershipStatistics;
 import org.apache.geode.distributed.internal.membership.gms.LifecycleListenerNoOp;
 import org.apache.geode.distributed.internal.membership.gms.MembershipListenerNoOp;
-import org.apache.geode.distributed.internal.membership.gms.locator.MembershipLocatorImpl;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
 import org.apache.geode.distributed.internal.tcpserver.TcpSocketCreator;
 import org.apache.geode.internal.serialization.DSFIDSerializer;
@@ -117,7 +116,7 @@ public class MembershipBuilderImpl<ID extends MemberIdentifier> implements Membe
             membershipConfig, serializer, memberFactory, locatorClient, socketCreator);
     membership.setListeners(membershipListener, messageListener, lifecycleListener);
     if (membershipLocator != null) {
-      membership.setLocators(membershipLocator.getGMSLocator(), membershipLocator);
+      membership.setLocators(membershipLocator.getRapidSeedLocator(), membershipLocator);
     }
     membership.init();
     return membership;

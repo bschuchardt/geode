@@ -16,6 +16,8 @@ package org.apache.geode.distributed.internal.membership.rapid;
 
 import java.io.IOException;
 import java.io.NotSerializableException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -38,7 +40,6 @@ import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.Cluster;
 import com.vrg.rapid.NodeStatusChange;
-import com.vrg.rapid.SharedResources;
 import com.vrg.rapid.messaging.impl.NettyClientServer;
 import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
@@ -90,6 +91,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private final Authenticator<ID> authenticator;
   private final MembershipConfig membershipConfig;
   private final DSFIDSerializer serializer;
+
+  public MemberIdentifierFactory<ID> getMemberFactory() {
+    return memberFactory;
+  }
+
   private final MemberIdentifierFactory<ID> memberFactory;
   private final TcpClient locatorClient;
   private final TcpSocketCreator socketCreator;
@@ -100,7 +106,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private MessageListener<ID> messageListener;
   private LifecycleListener<ID> lifecycleListener;
 
-  private Locator<ID> locator;
+  private RapidSeedLocator<ID> locator;
   private MembershipLocator<ID> membershipLocator;
 
   private final ExecutorService viewExecutor;
@@ -223,6 +229,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private volatile MembershipView<ID> latestView = new MembershipView<>();
 
   /**
+   * The next view change will establish the first membership view
+   */
+  private boolean firstView = true;
+
+  /**
    * Set to true when upcalls should be generated for events.
    */
   private volatile boolean processingEvents = false;
@@ -258,7 +269,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     this.cancelCriterion = new Stopper();
   }
 
-  public void setLocators(final Locator<ID> locator,
+  public void setLocators(final RapidSeedLocator<ID> locator,
                           final MembershipLocator<ID> membershipLocator) {
     this.locator = locator;
     this.membershipLocator = membershipLocator;
@@ -797,9 +808,10 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   public void start() throws MemberStartupException {
     isJoining = true;
     try {
-      logger.info("BRUCE: invoking startCluster");
-      startCluster();
+      logger.info("BRUCE: invoking join()");
+      join();
       hasJoined = true;
+      lifecycleListener.joinCompleted(localAddress);
     } catch (IOException | InterruptedException e) {
       throw new MemberStartupException("problem starting up", e);
     } finally {
@@ -862,14 +874,17 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   }
 
 
-  public void startCluster()
+  public void join()
       throws IOException, InterruptedException, MemberStartupException {
     // TODO: respect membershipConfig port settings
     //    final int[] membershipPortRange = this.membershipConfig.getMembershipPortRange();
     // TODO use bind-address from config (membershipConfig.getBindAddress())
 
-    logger.info("BRUCE: initializing netty");
-    String hostname = "127.0.0.1"; //LocalHostUtil.getLocalHostString();
+    String hostname = membershipConfig.getBindAddress();
+    if (hostname == null || hostname.trim().isEmpty()) {
+      hostname = LocalHostUtil.getLocalHost().getCanonicalHostName();
+    }
+    logger.info("BRUCE: initializing netty with hostname {}", hostname);
     final Endpoint endpoint = Endpoint.newBuilder()
         .setHostname(ByteString.copyFromUtf8(hostname))
         .setPort(0).build();
@@ -891,9 +906,14 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         KnownVersion.getCurrentVersion().ordinal(),
         0, 0,
         (byte) (membershipConfig.getMemberWeight() & 0xff), false, null);
+
+    localAddress = memberFactory.create(gmsMember);
+    lifecycleListener.start(localAddress);
+
+    // establish the serialized form of our identifier after the lifecycleListener has established
+    // the directChannel port.  Otherwise it's -1.
     Map<String, ByteString> metadata = new HashMap<>();
     metadata.put("gmsmember", gmsMember.asByteString(serializer));
-    localAddress = memberFactory.create(gmsMember);
 
     HostAndPort listenAddress = HostAndPort.fromParts(hostname, port);
     logger.info("BRUCE: established listen address of " + listenAddress);
@@ -908,39 +928,56 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         this::onViewChange);
     builder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
         this::onKicked);
-    latestViewWriteLock.lock();
-//    try {
-      if (membershipLocator != null) {
-        logger.info("BRUCE: starting locator");
-        cluster = builder.start();
-      } else {
-        logger.info("BRUCE: finding seed address from locator");
-        HostAndPort seedAddress = findSeedAddressFromLocators();
-        logger.info("BRUCE: seed address is " + seedAddress);
-        logger.info("BRUCE: starting server");
+//    final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort>
+//        locatorHostsAndPorts =
+//        GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
+    HostAndPort seedAddress = null;
+    // TODO: this needs to handle concurrent startup for the Rapid implementation.  Looping
+    // is probably needed, as in GMSJoinLeave
+    try {
+      logger.info("BRUCE: finding seed address from locator");
+      seedAddress = findSeedAddressFromLocators();
+      logger.info("BRUCE: seed address is " + seedAddress);
+      if (!seedAddress.equals(localAddress)) {
+        logger.info("BRUCE: joining existing cluster");
         cluster = builder.join(seedAddress);
       }
-      // todo need wait/notify or a Promise/Future of some kind here
-      logger.info("BRUCE: waiting for initial membership view");
-      long giveupTime = System.currentTimeMillis() + membershipConfig.getJoinTimeout();
-      while (latestView == null && giveupTime < System.currentTimeMillis()) {
-        try {
-          Thread.sleep(100);
-        } catch (InterruptedException e) {
-          disconnect(true);
-          throw new MemberStartupException("interrupted waiting for the cluster membership view");
-        }
+    } catch (MemberStartupException e) {
+      if (membershipLocator == null) {
+        throw e;
       }
-      if (latestView == null) {
+    } catch (Cluster.JoinException e) {
+      logger.info("Unable to join cluster using seed {}", seedAddress, e);
+      // TODO here we should record the failed seed address and loop to try another one.
+      // Without doing this we are only supporting a single locator and may have trouble
+      // rejoining when all seeds are down and we've recovered the view from disk
+      if (membershipLocator == null) {
+        throw new MemberStartupException("Unable to join the cluster", e);
+      }
+    }
+    if (cluster == null) {
+      logger.info("BRUCE: starting new cluster");
+      cluster = builder.start();
+    }
+    // todo need wait/notify or a Promise/Future of some kind here
+    logger.info("BRUCE: waiting for initial membership view");
+    long giveupTime = System.currentTimeMillis() + membershipConfig.getJoinTimeout();
+    while (latestView == null && giveupTime < System.currentTimeMillis()) {
+      try {
+        Thread.sleep(100);
+      } catch (InterruptedException e) {
         disconnect(true);
-        throw new MemberStartupException("timed out waiting for the cluster membership view");
+        throw new MemberStartupException("interrupted waiting for the cluster membership view");
       }
-      logger.info("BRUCE: finished joining the cluster");
-//      latestView = createGeodeView(0, cluster);
-//      logger.info("BRUCE: initial view is " + latestView);
-//    } finally {
-//      latestViewWriteLock.unlock();
-//    }
+    }
+    if (latestView == null) {
+      disconnect(true);
+      throw new MemberStartupException("timed out waiting for the cluster membership view");
+    }
+    if (locator != null) {
+      locator.setMembership(this);
+    }
+    logger.info("BRUCE: finished joining the cluster");
   }
 
   private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
@@ -982,27 +1019,36 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
   }
 
-  private void onViewChange(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    logger.info("BRUCE: onViewChange: " + nodeStatusChanges);
+  private synchronized void onViewChange(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
+    logger.info("BRUCE: " + localAddress + " onViewChange: " + nodeStatusChanges);
     MembershipView<ID> currentView = latestView;
-    if (currentView.getViewId() < 0 && !isConnected()) {
-      latestView = createGeodeView(viewID, nodeStatusChanges);
+    if (firstView && !isConnected()) {
+      firstView = false;
+      latestView = createGeodeView(currentView, viewID, nodeStatusChanges);
+      logger.info("BRUCE: created new view {}", latestView);
       logger.debug("Membership: initial view is {}", latestView);
     } else {
-      handleOrDeferViewEvent(createGeodeView(viewID, nodeStatusChanges));
+      handleOrDeferViewEvent(createGeodeView(currentView, viewID, nodeStatusChanges));
+      logger.info("BRUCE: created new view {}", latestView);
     }
   }
 
   private void onViewChangeProposal(long viewID, List<NodeStatusChange> nodeStatusChanges) {
     // TODO: anything to do here?
-    logger.info("BRUCE: onViewChangeProposal: " + nodeStatusChanges);
+    logger.info("BRUCE: " + localAddress + " onViewChangeProposal: " + nodeStatusChanges);
   }
 
-  private MembershipView<ID> createGeodeView(long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    MembershipView<ID> result =
+  private MembershipView<ID> createGeodeView(MembershipView<ID> baseView, long viewID, List<NodeStatusChange> nodeStatusChanges) {
+    MembershipView<ID> viewChanges =
         createGeodeView(this.localAddress, viewID, nodeStatusChanges);
-    result.makeUnmodifiable();
-    return result;
+    MembershipView<ID> newView = new MembershipView(viewChanges.getCreator(), (int)(viewID&0x7FFFFFFF), baseView.getMembers());
+    newView.removeAll(viewChanges.getCrashedMembers());
+    newView.removeAll(viewChanges.getShutdownMembers());
+    for (ID member: viewChanges.getMembers()) {
+      newView.add(member);
+    }
+    newView.makeUnmodifiable();
+    return newView;
   }
 
   private MembershipView<ID> createGeodeView(ID gmsCreator, long viewId, List<NodeStatusChange> nodeStatusChanges) {
@@ -1022,25 +1068,13 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     // treat all missing members as having crashed.  DistributionImpl will know if a
     // shutdown message has been received and can invoke the proper listener callback based
     // on that knowledge
-    return new MembershipView<ID>(geodeCreator, (int)viewId, upnodes, Collections.emptySet(), downnodes);
+    return new MembershipView<ID>(geodeCreator, (int)(viewId&0x7FFFFFFF), upnodes, Collections.emptySet(), downnodes);
   }
-
-  private MembershipView<ID> createGeodeView(long viewId, Cluster cluster) {
-    ID geodeCreator = localAddress;
-    List<Endpoint> endpoints = cluster.getMemberlist();
-    Map<Endpoint, Metadata> metadataMap = cluster.getClusterMetadata();
-    List<ID> members = new ArrayList<>(metadataMap.size());
-    for (Endpoint endpoint: endpoints) {
-      Metadata metadata = metadataMap.get(endpoint);
-      GMSMemberData gmsMemberData = new GMSMemberData(metadata.getMetadataMap().get("gmsmember"), serializer);
-      ID geodeMember = memberFactory.create(gmsMemberData);
-      members.add(geodeMember);
-    }
-    return new MembershipView<ID>(geodeCreator, (int)viewId, members, Collections.emptySet(), Collections.emptySet());
-  }
-
 
   protected void handleOrDeferViewEvent(MembershipView<ID> viewArg) {
+    if (locator != null) {
+      locator.installView(viewArg);
+    }
     if (this.isJoining) {
       // bug #44373 - queue all view messages while joining.
       // This is done under the latestViewLock, but we can't block here because
@@ -1060,8 +1094,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
           }
         }
       }
-      locator.installView(new GMSMembershipView<ID>(viewArg.getCreator(), viewArg.getViewId(),
-          viewArg.getMembers(), viewArg.getShutdownMembers(), viewArg.getCrashedMembers()));
       viewExecutor.submit(() -> processView(viewArg));
     } finally {
       latestViewWriteLock.unlock();
@@ -1115,10 +1147,12 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       // Save previous view, for delta analysis
       MembershipView<ID> priorView = latestView;
 
-      if (newView.getViewId() < priorView.getViewId()) {
-        // ignore this view since it is old news
-        return;
-      }
+      // TODO: Rapid configuration numbers are being used as view IDs.  These numbers don't
+      // get incremented sequentially like JGroups view IDs, so we can't compare them.
+//      if (newView.getViewId() < priorView.getViewId()) {
+//        // ignore this view since it is old news
+//        return;
+//      }
 
       // update the view to reflect our changes, so that
       // callbacks will see the new (updated) view.
@@ -1331,119 +1365,67 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
 
 
-
+  // TODO: implement locator-wait-time.  If locators can't be contacted don't create a new
+  // cluster unless blah blah blah circumstances exist (bypass discovery system property used
+  // in GMSJoinLeave is set to true, for instance)
   private HostAndPort findSeedAddressFromLocators() throws MemberStartupException {
     assert this.localAddress != null;
 
     FindCoordinatorRequest<ID> request = new FindCoordinatorRequest<>(this.localAddress,
         new HashSet<>(), -1, null /*DH public key*/,
-        -1, membershipConfig.DEFAULT_SECURITY_UDP_DHALGO);
+        -1, null);
 
-    ID possibleCoordinator;
-    Set<ID> possibleCoordinators = new HashSet<>();
-    Set<ID> coordinatorsWithView = new HashSet<>();
-    Set<ID> registrants = new HashSet<>();
-    int highestViewId = -1;
-    GMSMembershipView<ID> highestView = null;
-
-
-    long giveUpTime =
-        System.currentTimeMillis() + ((long) membershipConfig.getLocatorWaitTime() * 1000L);
 
     int connectTimeout = (int)membershipConfig.getMemberTimeout() * 2;
-    boolean anyResponses = false;
 
     logger.debug("sending {} to {}", request, membershipConfig.getLocators());
 
-    boolean hasContactedAJoinedLocator = false;
-    int locatorsContacted = 0;
-
     final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort> locators =
         GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
-    do {
-      for (org.apache.geode.distributed.internal.tcpserver.HostAndPort laddr : locators) {
-        try {
-          Object o = locatorClient.requestToServer(laddr, request, connectTimeout, true);
-          FindCoordinatorResponse<ID> response =
-              (o instanceof FindCoordinatorResponse) ? (FindCoordinatorResponse<ID>) o : null;
-          if (response != null) {
-            if (response.getRejectionMessage() != null) {
-              throw new MembershipConfigurationException(response.getRejectionMessage());
-            }
-            locatorsContacted++;
-            if (response.getRegistrants() != null) {
-              registrants.addAll(response.getRegistrants());
-            }
-            logger.info("received {} from locator {}", response, laddr);
-            if (!hasContactedAJoinedLocator && response.getSenderId() != null
-                && response.getSenderId().getVmViewId() >= 0) {
-              logger.info("Locator's address indicates it is part of a distributed system "
-                  + "so I will not become membership coordinator on this attempt to join");
-              hasContactedAJoinedLocator = true;
-            }
-            ID responseCoordinator = response.getCoordinator();
-            if (responseCoordinator != null) {
-              anyResponses = true;
-              GMSMembershipView<ID> v = response.getView();
-              int viewId = v == null ? -1 : v.getViewId();
-              if (viewId > highestViewId) {
-                highestViewId = viewId;
-                registrants.clear();
-              }
-              if (viewId > -1) {
-                coordinatorsWithView.add(responseCoordinator);
-              }
-              // if this node is restarting it should never create its own cluster because
-              // the QuorumChecker would have contacted a quorum of live nodes and one of
-              // them should already be the coordinator, or should become the coordinator soon
-              boolean isMyOldAddress =
-                  membershipConfig.isReconnecting() && localAddress.equals(responseCoordinator)
-                      && responseCoordinator.getVmViewId() >= 0;
-              if (!isMyOldAddress) {
-                possibleCoordinators.add(response.getCoordinator());
-              }
-            }
-          }
-        } catch (IOException | ClassNotFoundException problem) {
-          logger.info("Unable to contact locator " + laddr + ": " + problem);
-          logger.debug("Exception thrown when contacting a locator", problem);
-          if (locatorsContacted == 0 && System.currentTimeMillis() < giveUpTime) {
-            try {
-              Thread.sleep(1000);
-            } catch (InterruptedException e) {
-              Thread.currentThread().interrupt();
-//              services.getCancelCriterion().checkCancelInProgress(e);
-              throw new MemberStartupException("Interrupted while trying to contact locators");
-            }
+    addLocalLocatorIfMissing(locators);
+    for (org.apache.geode.distributed.internal.tcpserver.HostAndPort locator : locators) {
+      try {
+        Object o = locatorClient.requestToServer(locator, request, connectTimeout, true);
+        FindCoordinatorResponse<ID> response =
+            (o instanceof FindCoordinatorResponse) ? (FindCoordinatorResponse<ID>) o : null;
+        if (response != null) {
+          logger.info("received {} from locator {}", response, locator);
+          ID responseCoordinator = response.getCoordinator();
+          if (responseCoordinator != null) {
+            return HostAndPort.fromParts(responseCoordinator.getHostName(),
+                responseCoordinator.getMembershipPort());
           }
         }
+      } catch (ConnectException e) {
+        // unable to contact this locator
+        logger.info("Locator {} appears to be offline", locator);
+      } catch (Exception e) {
+        logger.info("Exception trying to contact locator " + locator, e);
       }
-    } while (locatorsContacted < locators.size() && System.currentTimeMillis() < giveUpTime);
-
-    if (possibleCoordinators.isEmpty()) {
-      return HostAndPort.fromParts(localAddress.getHostName(), localAddress.getMembershipPort());
     }
+    throw new MemberStartupException("unable to contact any locators");
+  }
 
-    if (coordinatorsWithView.size() > 0) {
-      possibleCoordinators = coordinatorsWithView;// lets check current coordinators in view only
-    }
-
-    Iterator<ID> it = possibleCoordinators.iterator();
-    if (possibleCoordinators.size() == 1) {
-      possibleCoordinator = it.next();
-    } else {
-      ID oldest = it.next();
-      while (it.hasNext()) {
-        ID candidate = it.next();
-        if (memberFactory.getComparator().compare(oldest, candidate) > 0) {
-          oldest = candidate;
-        }
+  private void addLocalLocatorIfMissing(
+      List<org.apache.geode.distributed.internal.tcpserver.HostAndPort> locators)
+      throws MembershipConfigurationException {
+    if (membershipLocator != null) {
+      org.apache.geode.distributed.internal.tcpserver.HostAndPort localLocator =
+          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(null, membershipLocator.getPort());
+      if (locators.contains(localLocator)) {
+        return;
       }
-      possibleCoordinator = oldest;
+      String hostName = membershipConfig.getBindAddress();
+      if (hostName == null) {
+        return;
+      }
+      localLocator =
+          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(hostName, membershipLocator.getPort());
+      if (!locators.contains(localLocator)) {
+        locators.add(localLocator);
+        logger.info("BRUCE: added local locator to provided locator list.  For discovery the locator list is " + locators);
+      }
     }
-    logger.info("findCoordinator chose {} out of these possible coordinators: {}",
-        possibleCoordinator, possibleCoordinators);
-    return HostAndPort.fromParts(possibleCoordinator.getHostName(), possibleCoordinator.getMembershipPort());
   }
 
   /**

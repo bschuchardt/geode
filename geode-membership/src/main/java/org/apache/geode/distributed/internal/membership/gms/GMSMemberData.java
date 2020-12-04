@@ -665,6 +665,7 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData>, Ser
     SerializationContext context = serializer.createSerializationContext(out);
     try {
       writeEssentialData(out, context);
+      writeAdditionalData(out);
     } catch (IOException e) {
       throw new SerializationException("error serializing an identifier", e);
     }
@@ -679,6 +680,8 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData>, Ser
     DeserializationContext context = serializer.createDeserializationContext(input);
     try {
       readEssentialData(input, context);
+      readAdditionalData(input);
+      isPartial = false;
     } catch (IOException | ClassNotFoundException e) {
       throw new SerializationException("error serializing an identifier", e);
     }

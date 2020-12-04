@@ -40,6 +40,8 @@ import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
 import org.apache.geode.distributed.internal.membership.api.MembershipConfigurationException;
 import org.apache.geode.distributed.internal.membership.api.MembershipLocatorStatistics;
+import org.apache.geode.distributed.internal.membership.api.MembershipView;
+import org.apache.geode.distributed.internal.membership.gms.GMSMemberData;
 import org.apache.geode.distributed.internal.membership.gms.GMSMembershipView;
 import org.apache.geode.distributed.internal.membership.gms.GMSUtil;
 import org.apache.geode.distributed.internal.membership.gms.Services;
@@ -67,7 +69,7 @@ import org.apache.geode.logging.internal.log4j.api.LogService;
  *
  * @param <ID>
  */
-public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID>, TcpHandler {
+public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler {
 
   static final int LOCATOR_FILE_STAMP = 0x7b8cf741;
 
@@ -88,7 +90,6 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
 
   private volatile boolean isCoordinator;
 
-  private Services<ID> services;
   private ID localAddress;
 
   /**
@@ -100,6 +101,7 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
 
   private File viewFile;
   private final TcpClient locatorClient;
+  private MembershipImpl membership;
 
   /**
    * @param bindAddress network address that TcpServer will bind to
@@ -139,17 +141,17 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
    * up in geode-core. Services must be started before this call.
    *
    */
-  public synchronized boolean setServices(
-      final Services<ID> services) {
-    if (this.services == null || this.services.isStopped()) {
-      this.services = services;
-      localAddress = this.services.getMessenger().getMemberID();
+  public synchronized boolean setMembership(
+      final MembershipImpl<ID> membership) {
+    if (this.membership == null || !this.membership.isConnected()) {
+      this.membership = membership;
+      localAddress = membership.getLocalMember();
       Objects.requireNonNull(localAddress, "member address should have been established");
       logger.info("Peer locator is connecting to local membership services with ID {}",
           localAddress);
-      GMSMembershipView<ID> newView = this.services.getJoinLeave().getView();
+      MembershipView<ID> newView = membership.getView();
       if (newView != null) {
-        view = newView;
+        view = new GMSMembershipView<ID>(newView.getCreator(), newView.getViewId(), newView.getMembers());
         recoveredView = null;
       } else {
         // if we are auto-reconnecting we may already have a membership view
@@ -175,17 +177,6 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
     return false;
   }
 
-  @VisibleForTesting
-  File setViewFile(File file) {
-    viewFile = file.getAbsoluteFile();
-    return viewFile;
-  }
-
-  @VisibleForTesting
-  File getViewFile() {
-    return viewFile;
-  }
-
   public void init(TcpServer server) {
     String persistentFileIdentifier = "" + server.getPort();
     if (viewFile == null) {
@@ -195,27 +186,13 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
     logger.info(
         "GemFire peer location service starting.  Other locators: {}  Locators preferred as coordinators: {}  Network partition detection enabled: {}  View persistence file: {}",
         locatorString, usePreferredCoordinators, networkPartitionDetectionEnabled, viewFile);
-    recover();
+
+    recoverFromOtherLocators();
   }
 
-  @Override
-  public void installView(GMSMembershipView<ID> view) {
-    synchronized (registrants) {
-      registrants.clear();
-    }
+  public void installView(MembershipView<ID> view) {
     logger.info("Peer locator received new membership view: {}", view);
-    this.view = view;
-    recoveredView = null;
-    saveView(view);
-  }
-
-  @Override
-  public void setIsCoordinator(boolean isCoordinator) {
-    if (isCoordinator) {
-      logger.info(
-          "Location services has received notification that this node is becoming membership coordinator");
-    }
-    this.isCoordinator = isCoordinator;
+    this.view = new GMSMembershipView<ID>(view.getCreator(), view.getViewId(), view.getMembers());
   }
 
   public Object processRequest(Object request) {
@@ -223,14 +200,15 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
       logger.debug("Peer locator processing {}", request);
     }
 
-    if (localAddress == null && services != null) {
-      localAddress = services.getMessenger().getMemberID();
+    if (localAddress == null && membership != null) {
+      localAddress = (ID)membership.getLocalMember();
     }
 
     Object response = null;
     if (request instanceof GetViewRequest) {
       if (view != null) {
-        response = new GetViewResponse<>(view);
+        response = new GetViewResponse<>(new GMSMembershipView<ID>(view.getCreator(),
+            view.getViewId(), view.getMembers()));
       }
     } else if (request instanceof FindCoordinatorRequest) {
       response = processFindCoordinatorRequest((FindCoordinatorRequest<ID>) request);
@@ -243,29 +221,9 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
 
   private FindCoordinatorResponse<ID> processFindCoordinatorRequest(
       FindCoordinatorRequest<ID> findRequest) {
-    if (!findRequest.getDHAlgo().equals(securityUDPDHAlgo)) {
-      return new FindCoordinatorResponse<>(
-          "Rejecting findCoordinatorRequest, as member not configured same udp security("
-              + findRequest.getDHAlgo() + ") as locator (" + securityUDPDHAlgo + ")");
-    }
-
-    if (services == null) {
-      if (findRequest.getMyPublicKey() != null) {
-        publicKeys.put(new GMSMemberWrapper(findRequest.getMemberID()),
-            findRequest.getMyPublicKey());
-      }
-      logger.debug(
-          "Rejecting a request to find the coordinator - membership services are still initializing");
-      return null;
-    }
-
     if (findRequest.getMemberID() == null) {
       return null;
     }
-
-    services.getMessenger().setPublicKey(findRequest.getMyPublicKey(),
-        findRequest.getMemberID());
-
     GMSMembershipView<ID> responseView = view;
     if (responseView == null) {
       responseView = recoveredView;
@@ -311,18 +269,20 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
         rejections = Collections.emptyList();
       }
 
-      synchronized (registrants) {
-        coordinator = services.getJoinLeave().getMemberID();
-        for (ID mbr : registrants) {
-          if (mbr != coordinator && (coordinator == null || Objects.compare(mbr, coordinator,
-              services.getMemberFactory().getComparator()) < 0)) {
-            if (!rejections.contains(mbr) && (mbr.preferredForCoordinator()
-                || !mbr.isNetworkPartitionDetectionEnabled())) {
-              coordinator = mbr;
+      if (membership != null) {
+        synchronized (registrants) {
+          coordinator = (ID) membership.getLocalMember().getMemberData();
+          for (ID mbr : registrants) {
+            if (mbr != coordinator && (coordinator == null || Objects.compare(mbr, coordinator,
+                membership.getMemberFactory().getComparator()) < 0)) {
+              if (!rejections.contains(mbr) && (mbr.preferredForCoordinator()
+                  || !mbr.isNetworkPartitionDetectionEnabled())) {
+                coordinator = mbr;
+              }
             }
           }
+          logger.info("Peer locator: coordinator from registrations is {}", coordinator);
         }
-        logger.info("Peer locator: coordinator from registrations is {}", coordinator);
       }
     }
 
@@ -336,42 +296,12 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
         }
       }
 
-      byte[] coordinatorPublicKey = null;
-      if (responseView != null) {
-        coordinatorPublicKey = (byte[]) responseView.getPublicKey(coordinator);
-      }
-      if (coordinatorPublicKey == null) {
-        coordinatorPublicKey = services.getMessenger().getPublicKey(coordinator);
-      }
-
       return new FindCoordinatorResponse<ID>(coordinator, localAddress, fromView, responseView,
           new HashSet<>(registrants), networkPartitionDetectionEnabled, usePreferredCoordinators,
-          coordinatorPublicKey);
+          null);
     }
   }
 
-  private void saveView(GMSMembershipView<ID> view) {
-    if (viewFile == null) {
-      return;
-    }
-    if (!viewFile.delete() && viewFile.exists()) {
-      logger.warn("Peer locator is unable to delete persistent membership information in {}",
-          viewFile.getAbsolutePath());
-    }
-    try (FileOutputStream fileStream = new FileOutputStream(viewFile);
-        ObjectOutputStream oos = new ObjectOutputStream(fileStream)) {
-      oos.writeInt(LOCATOR_FILE_STAMP);
-      oos.writeInt(KnownVersion.getCurrentVersion().ordinal());
-      oos.flush();
-      DataOutputStream dataOutputStream = new DataOutputStream(oos);
-      objectSerializer.writeObject(view, dataOutputStream);
-    } catch (Exception e) {
-      logger.warn(
-          "Peer locator encountered an error writing current membership to disk.  Disabling persistence.  Care should be taken when bouncing this locator as it will not be able to recover knowledge of the running distributed system",
-          e);
-      viewFile = null;
-    }
-  }
 
   public void endRequest(Object request, long startTime) {
     locatorStats.endLocatorRequest(startTime);
@@ -381,29 +311,7 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
     locatorStats.endLocatorResponse(startTime);
   }
 
-  public byte[] getPublicKey(MemberIdentifier member) {
-    return publicKeys.get(new GMSMemberWrapper(member));
-  }
-
   public void shutDown() {
-    // nothing to do for GMSLocator
-    publicKeys.clear();
-  }
-
-  @VisibleForTesting
-  public List<ID> getMembers() {
-    if (view != null) {
-      return new ArrayList<>(view.getMembers());
-    }
-    synchronized (registrants) {
-      return new ArrayList<>(registrants);
-    }
-  }
-
-  private void recover() {
-    if (!recoverFromOtherLocators()) {
-      recoverFromFile(viewFile);
-    }
   }
 
   private boolean recoverFromOtherLocators() {
@@ -434,70 +342,6 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements Locator<ID
     return false;
   }
 
-  boolean recoverFromFile(File file) {
-    if (!file.exists()) {
-      logger.info("recovery file not found: {}", file.getAbsolutePath());
-      return false;
-    }
 
-    logger.info("Peer locator recovering from {} with size {}",
-        file.getAbsolutePath(), file.length());
-    try (FileInputStream fileInputStream = new FileInputStream(file);
-        ObjectInputStream ois = new ObjectInputStream(fileInputStream)) {
-      int stamp = ois.readInt();
-      if (stamp != LOCATOR_FILE_STAMP) {
-        return false;
-      }
 
-      int version = ois.readInt();
-      int currentVersion = KnownVersion.getCurrentVersion().ordinal();
-      DataInputStream input;
-      if (version == currentVersion) {
-        input = new DataInputStream(ois);
-      } else if (version > currentVersion) {
-        return false;
-      } else {
-        KnownVersion geodeVersion =
-            Versioning.getKnownVersionOrDefault(
-                Versioning.getVersion((short) version),
-                KnownVersion.CURRENT);
-        logger.info("Peer locator found that persistent view was written with version {}",
-            geodeVersion);
-        if (KnownVersion.GEODE_1_11_0.equals(geodeVersion)) {
-          // v1.11 did not create the file with an ObjectOutputStream, so don't use one here
-          input = new VersionedDataInputStream(fileInputStream, geodeVersion);
-        } else {
-          input = new VersionedDataInputStream(ois, geodeVersion);
-        }
-      }
-
-      // TBD - services isn't available when we recover from disk so this will throw an NPE
-      // recoveredView = (GMSMembershipView) services.getSerializer().readDSFID(input);
-      recoveredView = objectDeserializer.readObject(input);
-
-      // this is not a valid view so it shouldn't have a usable Id
-      recoveredView.setViewId(-1);
-      List<ID> members = new ArrayList<>(recoveredView.getMembers());
-      // Remove locators from the view. Since we couldn't recover from an existing
-      // locator we know that all of the locators in the view are defunct
-      for (ID member : members) {
-        if (member.getVmKind() == MemberIdentifier.LOCATOR_DM_TYPE) {
-          recoveredView.remove(member);
-        }
-      }
-
-      logger.info("Peer locator recovered membership is {}", recoveredView);
-      return true;
-
-    } catch (Throwable e) {
-      String message =
-          String.format("Unable to recover previous membership view from %s", file.toString());
-      logger.warn(message, e);
-      if (!file.delete() && file.exists()) {
-        logger.warn("Peer locator was unable to recover from or delete {}", file);
-        viewFile = null;
-      }
-      throw new IllegalStateException(message, e);
-    }
-  }
 }

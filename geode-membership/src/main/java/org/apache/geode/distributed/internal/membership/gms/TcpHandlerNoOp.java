@@ -19,7 +19,7 @@ import java.io.IOException;
 import org.apache.geode.distributed.internal.tcpserver.TcpHandler;
 import org.apache.geode.distributed.internal.tcpserver.TcpServer;
 
-class TcpHandlerNoOp implements TcpHandler {
+public class TcpHandlerNoOp implements TcpHandler {
   @Override
   public Object processRequest(Object request) throws IOException {
     return null;

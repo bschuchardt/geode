@@ -64,6 +64,8 @@ import org.apache.geode.test.junit.rules.ExecutorServiceRule;
  * with each other and form a group
  */
 public class MembershipIntegrationTest {
+  public static final String MEMBER_1 = "member1";
+  public static final String MEMBER_2 = "member2";
   private InetAddress localHost;
   private DSFIDSerializer dsfidSerializer;
   private TcpSocketCreator socketCreator;
@@ -85,10 +87,10 @@ public class MembershipIntegrationTest {
   public void oneMembershipCanStartWithALocator()
       throws IOException, MemberStartupException {
 
-    final MembershipLocator<MemberIdentifier> locator = createLocator(0);
+    final MembershipLocator<MemberIdentifier> locator = createLocator(MEMBER_1, 0);
     locator.start();
 
-    final Membership<MemberIdentifier> membership = createMembership(locator,
+    final Membership<MemberIdentifier> membership = createMembership(MEMBER_1, locator,
         locator.getPort());
     start(membership);
 
@@ -102,21 +104,31 @@ public class MembershipIntegrationTest {
   public void twoMembershipsCanStartWithOneLocator()
       throws IOException, MemberStartupException {
 
-    final MembershipLocator<MemberIdentifier> locator = createLocator(0);
+    final MembershipLocator<MemberIdentifier> locator = createLocator(MEMBER_1, 0);
     locator.start();
 
     final int locatorPort = locator.getPort();
 
-    final Membership<MemberIdentifier> membership1 = createMembership(locator, locatorPort);
-    start(membership1);
+    final String threadName = Thread.currentThread().getName();
+    final Membership<MemberIdentifier> membership1, membership2;
+    try {
+      // set a new thread name to aid in debugging failures
+      Thread.currentThread().setName("starting membership 1");
+      membership1 = createMembership(MEMBER_1, locator, locatorPort);
+      start(membership1);
 
-    final Membership<MemberIdentifier> membership2 = createMembership(null, locatorPort);
-    start(membership2);
-
-    await().untilAsserted(
+      Thread.currentThread().setName("starting membership 2");
+      membership2 = createMembership(MEMBER_2, null, locatorPort);
+      start(membership2);
+    } finally {
+      Thread.currentThread().setName(threadName);
+    }
+    System.out.println("waiting for first membership to have 2 nodes");
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership1.getView().getMembers()).hasSize(2));
 
-    await().untilAsserted(
+    System.out.println("waiting for second membership to have 2 nodes");
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership2.getView().getMembers()).hasSize(2));
 
     stop(membership1, membership2);
@@ -127,26 +139,26 @@ public class MembershipIntegrationTest {
   public void twoLocatorsCanStartSequentially()
       throws IOException, MemberStartupException {
 
-    final MembershipLocator<MemberIdentifier> locator1 = createLocator(0);
+    final MembershipLocator<MemberIdentifier> locator1 = createLocator(MEMBER_1, 0);
     locator1.start();
 
     final int locatorPort1 = locator1.getPort();
 
-    Membership<MemberIdentifier> membership1 = createMembership(locator1, locatorPort1);
+    Membership<MemberIdentifier> membership1 = createMembership(MEMBER_1, locator1, locatorPort1);
     start(membership1);
 
-    final MembershipLocator<MemberIdentifier> locator2 = createLocator(0, locatorPort1);
+    final MembershipLocator<MemberIdentifier> locator2 = createLocator(MEMBER_2, 0, locatorPort1);
     locator2.start();
 
     final int locatorPort2 = locator2.getPort();
 
     Membership<MemberIdentifier> membership2 =
-        createMembership(locator2, locatorPort1, locatorPort2);
+        createMembership(MEMBER_2, locator2, locatorPort1, locatorPort2);
     start(membership2);
 
-    await().untilAsserted(
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership1.getView().getMembers()).hasSize(2));
-    await().untilAsserted(
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership2.getView().getMembers()).hasSize(2));
 
     stop(membership2, membership1);
@@ -157,15 +169,17 @@ public class MembershipIntegrationTest {
   public void secondMembershipCanJoinUsingTheSecondLocatorToStart()
       throws IOException, MemberStartupException {
 
-    final MembershipLocator<MemberIdentifier> locator1 = createLocator(0);
+    final MembershipLocator<MemberIdentifier> locator1 = createLocator(MEMBER_1, 0);
     locator1.start();
 
     final int locatorPort1 = locator1.getPort();
 
-    final Membership<MemberIdentifier> membership1 = createMembership(locator1, locatorPort1);
+    System.out.println("BRUCE: starting first membership");
+    final Membership<MemberIdentifier> membership1 = createMembership(MEMBER_1, locator1, locatorPort1);
     start(membership1);
 
-    final MembershipLocator<MemberIdentifier> locator2 = createLocator(0, locatorPort1);
+    System.out.println("BRUCE: starting second locator");
+    final MembershipLocator<MemberIdentifier> locator2 = createLocator(MEMBER_2, 0, locatorPort1);
     locator2.start();
 
     int locatorPort2 = locator2.getPort();
@@ -173,13 +187,14 @@ public class MembershipIntegrationTest {
     // Force the next membership to use locator2 by stopping locator1
     stop(locator1);
 
+    System.out.println("BRUCE: starting second membership");
     Membership<MemberIdentifier> membership2 =
-        createMembership(locator2, locatorPort1, locatorPort2);
+        createMembership(MEMBER_2, locator2, locatorPort1, locatorPort2);
     start(membership2);
 
-    await().untilAsserted(
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership1.getView().getMembers()).hasSize(2));
-    await().untilAsserted(
+    await().atMost(10, TimeUnit.SECONDS).untilAsserted(
         () -> assertThat(membership2.getView().getMembers()).hasSize(2));
 
     stop(membership2, membership1);
@@ -197,7 +212,7 @@ public class MembershipIntegrationTest {
 
     int locatorWaitTime = (int) Duration.ofMinutes(5).getSeconds();
     final MembershipConfig config =
-        createMembershipConfig(true, locatorWaitTime, locatorPorts[0], locatorPorts[1]);
+        createMembershipConfig(true, locatorWaitTime, MEMBER_1, locatorPorts[0], locatorPorts[1]);
 
     /*
      * Start a locator trying to contact the locator that hasn't started it's port
@@ -278,12 +293,13 @@ public class MembershipIntegrationTest {
   }
 
   private Membership<MemberIdentifier> createMembership(
+      final String memberName,
       final MembershipLocator<MemberIdentifier> embeddedLocator,
       final int... locatorPorts)
       throws MembershipConfigurationException {
     final boolean isALocator = embeddedLocator != null;
     final MembershipConfig config =
-        createMembershipConfig(isALocator, DEFAULT_LOCATOR_WAIT_TIME, locatorPorts);
+        createMembershipConfig(isALocator, DEFAULT_LOCATOR_WAIT_TIME, memberName, locatorPorts);
     return createMembership(config, embeddedLocator);
   }
 
@@ -307,6 +323,7 @@ public class MembershipIntegrationTest {
   private MembershipConfig createMembershipConfig(
       final boolean isALocator,
       final int locatorWaitTime,
+      final String memberName,
       final int... locatorPorts) {
     return new MembershipConfig() {
       public String getLocators() {
@@ -325,6 +342,11 @@ public class MembershipIntegrationTest {
       public int getLocatorWaitTime() {
         return locatorWaitTime;
       }
+
+      @Override
+      public String getName() {
+        return memberName;
+      }
     };
   }
 
@@ -337,6 +359,7 @@ public class MembershipIntegrationTest {
   }
 
   private MembershipLocator<MemberIdentifier> createLocator(
+      String memberName,
       final int localPort,
       final int... locatorPorts)
       throws MembershipConfigurationException,
@@ -346,7 +369,7 @@ public class MembershipIntegrationTest {
     Path locatorDirectory = temporaryFolder.newFolder().toPath();
 
     final MembershipConfig config =
-        createMembershipConfig(true, DEFAULT_LOCATOR_WAIT_TIME, locatorPorts);
+        createMembershipConfig(true, DEFAULT_LOCATOR_WAIT_TIME, memberName, locatorPorts);
 
     return MembershipLocatorBuilder.<MemberIdentifier>newLocatorBuilder(
         socketCreator,

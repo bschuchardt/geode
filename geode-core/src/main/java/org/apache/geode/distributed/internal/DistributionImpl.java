@@ -278,18 +278,18 @@ public class DistributionImpl implements Distribution {
     msg.setBreadcrumbsInSender();
     Breadcrumbs.setProblem(null);
 
-    boolean useMcast = false;
-    if (mcastEnabled) {
-      useMcast = (msg.getMulticast() || allDestinations);
-    }
+//    boolean useMcast = false;
+//    if (mcastEnabled) {
+//      useMcast = (msg.getMulticast() || allDestinations);
+//    }
 
-    boolean sendViaMessenger = isForceUDPCommunications() || (msg instanceof ShutdownMessage);
+//    boolean sendViaMessenger = isForceUDPCommunications() || (msg instanceof ShutdownMessage);
 
-    if (useMcast || tcpDisabled || sendViaMessenger) {
-      result = membership.send(destinations.toArray(EMPTY_MEMBER_ARRAY), msg);
-    } else {
+//    if (useMcast || tcpDisabled || sendViaMessenger) {
+//      result = membership.send(destinations.toArray(EMPTY_MEMBER_ARRAY), msg);
+//    } else {
       result = directChannelSend(destinations, msg);
-    }
+//    }
 
     // If the message was a broadcast, don't enumerate failures.
     if (allDestinations)
