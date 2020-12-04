@@ -175,7 +175,8 @@ public class MembershipIntegrationTest {
     final int locatorPort1 = locator1.getPort();
 
     System.out.println("BRUCE: starting first membership");
-    final Membership<MemberIdentifier> membership1 = createMembership(MEMBER_1, locator1, locatorPort1);
+    final Membership<MemberIdentifier> membership1 =
+        createMembership(MEMBER_1, locator1, locatorPort1);
     start(membership1);
 
     System.out.println("BRUCE: starting second locator");

@@ -17,7 +17,6 @@ package org.apache.geode.distributed.internal.membership.rapid;
 import java.io.IOException;
 import java.io.NotSerializableException;
 import java.net.ConnectException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -68,9 +67,7 @@ import org.apache.geode.distributed.internal.membership.api.QuorumChecker;
 import org.apache.geode.distributed.internal.membership.api.StopShunningMarker;
 import org.apache.geode.distributed.internal.membership.gms.GMSMemberData;
 import org.apache.geode.distributed.internal.membership.gms.GMSMembership;
-import org.apache.geode.distributed.internal.membership.gms.GMSMembershipView;
 import org.apache.geode.distributed.internal.membership.gms.GMSUtil;
-import org.apache.geode.distributed.internal.membership.gms.interfaces.Locator;
 import org.apache.geode.distributed.internal.membership.gms.locator.FindCoordinatorRequest;
 import org.apache.geode.distributed.internal.membership.gms.locator.FindCoordinatorResponse;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
@@ -84,7 +81,7 @@ import org.apache.geode.logging.internal.executors.LoggingThread;
 import org.apache.geode.logging.internal.log4j.api.LogService;
 import org.apache.geode.util.internal.GeodeGlossary;
 
-public class MembershipImpl<ID extends MemberIdentifier> implements Membership<ID>  {
+public class MembershipImpl<ID extends MemberIdentifier> implements Membership<ID> {
   private static final Logger logger = LogService.getLogger();
 
   private final MembershipStatistics statistics;
@@ -188,8 +185,8 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
    * This object synchronizes threads waiting for startup to finish. Updates to
    * {@link #startupMessages} are synchronized through this object.
    */
-  private final GMSMembership.EventProcessingLock
-      startupLock = new GMSMembership.EventProcessingLock();
+  private final GMSMembership.EventProcessingLock startupLock =
+      new GMSMembership.EventProcessingLock();
 
   /**
    * Special mutex to create a critical section for {@link #startEventProcessing()}
@@ -270,7 +267,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   }
 
   public void setLocators(final RapidSeedLocator<ID> locator,
-                          final MembershipLocator<ID> membershipLocator) {
+      final MembershipLocator<ID> membershipLocator) {
     this.locator = locator;
     this.membershipLocator = membershipLocator;
   }
@@ -406,9 +403,9 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   public void uncleanShutdown(String reason, Exception e) {
     try {
-//      if (cleanupTimer != null && !cleanupTimer.isShutdown()) {
-//        cleanupTimer.shutdownNow();
-//      }
+      // if (cleanupTimer != null && !cleanupTimer.isShutdown()) {
+      // cleanupTimer.shutdownNow();
+      // }
       if (shutdownCause == null) {
         shutdownCause = e;
       }
@@ -837,7 +834,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   @Override
   public void waitForMessageState(MemberIdentifier member, Map state)
       throws InterruptedException, TimeoutException {
-      // TODO not implemented
+    // TODO not implemented
   }
 
   private boolean isShunnedOrNew(final ID m) {
@@ -857,13 +854,13 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   @Override
   public Map<String, Long> getMessageState(MemberIdentifier member, boolean includeMulticast,
-                                           Map result) {
+      Map result) {
     return null;
   }
 
   public void setListeners(MembershipListener<ID> membershipListener,
-                           MessageListener<ID> messageListener,
-                           LifecycleListener<ID> lifecycleListener) {
+      MessageListener<ID> messageListener,
+      LifecycleListener<ID> lifecycleListener) {
     this.membershipListener = membershipListener;
     this.messageListener = messageListener;
     this.lifecycleListener = lifecycleListener;
@@ -877,7 +874,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   public void join()
       throws IOException, InterruptedException, MemberStartupException {
     // TODO: respect membershipConfig port settings
-    //    final int[] membershipPortRange = this.membershipConfig.getMembershipPortRange();
+    // final int[] membershipPortRange = this.membershipConfig.getMembershipPortRange();
     // TODO use bind-address from config (membershipConfig.getBindAddress())
 
     String hostname = membershipConfig.getBindAddress();
@@ -911,7 +908,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     lifecycleListener.start(localAddress);
 
     // establish the serialized form of our identifier after the lifecycleListener has established
-    // the directChannel port.  Otherwise it's -1.
+    // the directChannel port. Otherwise it's -1.
     Map<String, ByteString> metadata = new HashMap<>();
     metadata.put("gmsmember", gmsMember.asByteString(serializer));
 
@@ -928,11 +925,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         this::onViewChange);
     builder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
         this::onKicked);
-//    final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort>
-//        locatorHostsAndPorts =
-//        GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
+    // final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort>
+    // locatorHostsAndPorts =
+    // GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
     HostAndPort seedAddress = null;
-    // TODO: this needs to handle concurrent startup for the Rapid implementation.  Looping
+    // TODO: this needs to handle concurrent startup for the Rapid implementation. Looping
     // is probably needed, as in GMSJoinLeave
     try {
       logger.info("BRUCE: finding seed address from locator");
@@ -992,21 +989,21 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       final Exception shutdownCause = new MemberDisconnectedException(nodeStatusChanges.toString());
 
       // cache the exception so it can be appended to ShutdownExceptions
-//      services.setShutdownCause(shutdownCause);
-//      services.getCancelCriterion().cancel(reason);
+      // services.setShutdownCause(shutdownCause);
+      // services.getCancelCriterion().cancel(reason);
 
-//      if (!inhibitForceDisconnectLogging) {
-        logger.fatal(
-            String.format("Membership service failure: %s", shutdownCause.getMessage()),
-            shutdownCause);
-//      }
+      // if (!inhibitForceDisconnectLogging) {
+      logger.fatal(
+          String.format("Membership service failure: %s", shutdownCause.getMessage()),
+          shutdownCause);
+      // }
 
-//      if (this.isReconnectingDS()) {
-//        logger.info("Reconnecting system failed to connect");
-//        uncleanShutdown(reason,
-//            new MemberDisconnectedException("reconnecting system failed to connect"));
-//        return;
-//      }
+      // if (this.isReconnectingDS()) {
+      // logger.info("Reconnecting system failed to connect");
+      // uncleanShutdown(reason,
+      // new MemberDisconnectedException("reconnecting system failed to connect"));
+      // return;
+      // }
 
       try {
         membershipListener.saveConfig();
@@ -1038,26 +1035,30 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     logger.info("BRUCE: " + localAddress + " onViewChangeProposal: " + nodeStatusChanges);
   }
 
-  private MembershipView<ID> createGeodeView(MembershipView<ID> baseView, long viewID, List<NodeStatusChange> nodeStatusChanges) {
+  private MembershipView<ID> createGeodeView(MembershipView<ID> baseView, long viewID,
+      List<NodeStatusChange> nodeStatusChanges) {
     MembershipView<ID> viewChanges =
         createGeodeView(this.localAddress, viewID, nodeStatusChanges);
-    MembershipView<ID> newView = new MembershipView(viewChanges.getCreator(), (int)(viewID&0x7FFFFFFF), baseView.getMembers());
+    MembershipView<ID> newView = new MembershipView(viewChanges.getCreator(),
+        (int) (viewID & 0x7FFFFFFF), baseView.getMembers());
     newView.removeAll(viewChanges.getCrashedMembers());
     newView.removeAll(viewChanges.getShutdownMembers());
-    for (ID member: viewChanges.getMembers()) {
+    for (ID member : viewChanges.getMembers()) {
       newView.add(member);
     }
     newView.makeUnmodifiable();
     return newView;
   }
 
-  private MembershipView<ID> createGeodeView(ID gmsCreator, long viewId, List<NodeStatusChange> nodeStatusChanges) {
+  private MembershipView<ID> createGeodeView(ID gmsCreator, long viewId,
+      List<NodeStatusChange> nodeStatusChanges) {
     ID geodeCreator = gmsCreator;
     List<ID> upnodes = new ArrayList<>(nodeStatusChanges.size());
     Set<ID> downnodes = new HashSet<>(nodeStatusChanges.size());
-    for (NodeStatusChange nodeStatusChange: nodeStatusChanges) {
+    for (NodeStatusChange nodeStatusChange : nodeStatusChanges) {
       Metadata metadata = nodeStatusChange.getMetadata();
-      GMSMemberData gmsMemberData = new GMSMemberData(metadata.getMetadataMap().get("gmsmember"), serializer);
+      GMSMemberData gmsMemberData =
+          new GMSMemberData(metadata.getMetadataMap().get("gmsmember"), serializer);
       ID geodeMember = memberFactory.create(gmsMemberData);
       if (nodeStatusChange.getStatus() == EdgeStatus.UP) {
         upnodes.add(geodeMember);
@@ -1065,10 +1066,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         downnodes.add(geodeMember);
       }
     }
-    // treat all missing members as having crashed.  DistributionImpl will know if a
+    // treat all missing members as having crashed. DistributionImpl will know if a
     // shutdown message has been received and can invoke the proper listener callback based
     // on that knowledge
-    return new MembershipView<ID>(geodeCreator, (int)(viewId&0x7FFFFFFF), upnodes, Collections.emptySet(), downnodes);
+    return new MembershipView<ID>(geodeCreator, (int) (viewId & 0x7FFFFFFF), upnodes,
+        Collections.emptySet(), downnodes);
   }
 
   protected void handleOrDeferViewEvent(MembershipView<ID> viewArg) {
@@ -1147,12 +1149,12 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       // Save previous view, for delta analysis
       MembershipView<ID> priorView = latestView;
 
-      // TODO: Rapid configuration numbers are being used as view IDs.  These numbers don't
+      // TODO: Rapid configuration numbers are being used as view IDs. These numbers don't
       // get incremented sequentially like JGroups view IDs, so we can't compare them.
-//      if (newView.getViewId() < priorView.getViewId()) {
-//        // ignore this view since it is old news
-//        return;
-//      }
+      // if (newView.getViewId() < priorView.getViewId()) {
+      // // ignore this view since it is old news
+      // return;
+      // }
 
       // update the view to reflect our changes, so that
       // callbacks will see the new (updated) view.
@@ -1169,7 +1171,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         boolean wasSurprise = surpriseMembers.containsKey(m);
         if (wasSurprise) {
           for (Iterator<Map.Entry<ID, Long>> iterator =
-               surpriseMembers.entrySet().iterator(); iterator.hasNext();) {
+              surpriseMembers.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<ID, Long> entry = iterator.next();
             if (entry.getKey().equals(m)) {
               entry.getKey().setMemberData(m.getMemberData());
@@ -1237,7 +1239,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       // expire surprise members, add others to view
       long oldestAllowed = System.currentTimeMillis() - this.surpriseMemberTimeout;
       for (Iterator<Map.Entry<ID, Long>> it =
-           surpriseMembers.entrySet().iterator(); it.hasNext();) {
+          surpriseMembers.entrySet().iterator(); it.hasNext();) {
         Map.Entry<ID, Long> entry = it.next();
         Long birthtime = entry.getValue();
         if (birthtime.longValue() < oldestAllowed) {
@@ -1365,18 +1367,18 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
 
 
-  // TODO: implement locator-wait-time.  If locators can't be contacted don't create a new
+  // TODO: implement locator-wait-time. If locators can't be contacted don't create a new
   // cluster unless blah blah blah circumstances exist (bypass discovery system property used
   // in GMSJoinLeave is set to true, for instance)
   private HostAndPort findSeedAddressFromLocators() throws MemberStartupException {
     assert this.localAddress != null;
 
     FindCoordinatorRequest<ID> request = new FindCoordinatorRequest<>(this.localAddress,
-        new HashSet<>(), -1, null /*DH public key*/,
+        new HashSet<>(), -1, null /* DH public key */,
         -1, null);
 
 
-    int connectTimeout = (int)membershipConfig.getMemberTimeout() * 2;
+    int connectTimeout = (int) membershipConfig.getMemberTimeout() * 2;
 
     logger.debug("sending {} to {}", request, membershipConfig.getLocators());
 
@@ -1411,7 +1413,8 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       throws MembershipConfigurationException {
     if (membershipLocator != null) {
       org.apache.geode.distributed.internal.tcpserver.HostAndPort localLocator =
-          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(null, membershipLocator.getPort());
+          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(null,
+              membershipLocator.getPort());
       if (locators.contains(localLocator)) {
         return;
       }
@@ -1420,10 +1423,13 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         return;
       }
       localLocator =
-          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(hostName, membershipLocator.getPort());
+          new org.apache.geode.distributed.internal.tcpserver.HostAndPort(hostName,
+              membershipLocator.getPort());
       if (!locators.contains(localLocator)) {
         locators.add(localLocator);
-        logger.info("BRUCE: added local locator to provided locator list.  For discovery the locator list is " + locators);
+        logger.info(
+            "BRUCE: added local locator to provided locator list.  For discovery the locator list is "
+                + locators);
       }
     }
   }
@@ -1447,6 +1453,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
     dispatchMessage(msg);
   }
+
   /**
    * Logic for processing a distribution message.
    * <p>
@@ -1497,105 +1504,105 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     messageListener.messageReceived(msg);
   }
 
-    static class StartupEvent<ID extends MemberIdentifier> {
-      static final int SURPRISE_CONNECT = 1;
-      static final int VIEW = 2;
-      static final int MESSAGE = 3;
+  static class StartupEvent<ID extends MemberIdentifier> {
+    static final int SURPRISE_CONNECT = 1;
+    static final int VIEW = 2;
+    static final int MESSAGE = 3;
 
-      /**
-       * indicates whether the event is a departure, a surprise connect (i.e., before the view message
-       * arrived), a view, or a regular message
-       *
-       * @see #SURPRISE_CONNECT
-       * @see #VIEW
-       * @see #MESSAGE
-       */
-      private final int kind;
+    /**
+     * indicates whether the event is a departure, a surprise connect (i.e., before the view message
+     * arrived), a view, or a regular message
+     *
+     * @see #SURPRISE_CONNECT
+     * @see #VIEW
+     * @see #MESSAGE
+     */
+    private final int kind;
 
-      // Miscellaneous state depending on the kind of event
-      ID member;
-      Message<ID> dmsg;
-      MembershipView<ID> gmsView;
+    // Miscellaneous state depending on the kind of event
+    ID member;
+    Message<ID> dmsg;
+    MembershipView<ID> gmsView;
 
-      @Override
-      public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("kind=");
-        switch (kind) {
-          case SURPRISE_CONNECT:
-            sb.append("connect; member = <").append(member).append(">");
-            break;
-          case VIEW:
-            String text = gmsView.toString();
-            sb.append("view <").append(text).append(">");
-            break;
-          case MESSAGE:
-            sb.append("message <").append(dmsg).append(">");
-            break;
-          default:
-            sb.append("unknown=<").append(kind).append(">");
-            break;
-        }
-        return sb.toString();
+    @Override
+    public String toString() {
+      StringBuilder sb = new StringBuilder();
+      sb.append("kind=");
+      switch (kind) {
+        case SURPRISE_CONNECT:
+          sb.append("connect; member = <").append(member).append(">");
+          break;
+        case VIEW:
+          String text = gmsView.toString();
+          sb.append("view <").append(text).append(">");
+          break;
+        case MESSAGE:
+          sb.append("message <").append(dmsg).append(">");
+          break;
+        default:
+          sb.append("unknown=<").append(kind).append(">");
+          break;
       }
-
-      /**
-       * Create a surprise connect event
-       *
-       * @param member the member connecting
-       */
-      StartupEvent(final ID member) {
-        this.kind = SURPRISE_CONNECT;
-        this.member = member;
-      }
-
-      /**
-       * Indicate if this is a surprise connect event
-       *
-       * @return true if this is a connect event
-       */
-      boolean isSurpriseConnect() {
-        return this.kind == SURPRISE_CONNECT;
-      }
-
-      /**
-       * Create a view event
-       *
-       * @param v the new view
-       */
-      StartupEvent(MembershipView<ID> v) {
-        this.kind = VIEW;
-        this.gmsView = v;
-      }
-
-      /**
-       * Indicate if this is a view event
-       *
-       * @return true if this is a view event
-       */
-      boolean isGmsView() {
-        return this.kind == VIEW;
-      }
-
-      /**
-       * Create a message event
-       *
-       * @param d the message
-       */
-      StartupEvent(Message<ID> d) {
-        this.kind = MESSAGE;
-        this.dmsg = d;
-      }
-
-      /**
-       * Indicate if this is a message event
-       *
-       * @return true if this is a message event
-       */
-      boolean isDistributionMessage() {
-        return this.kind == MESSAGE;
-      }
+      return sb.toString();
     }
+
+    /**
+     * Create a surprise connect event
+     *
+     * @param member the member connecting
+     */
+    StartupEvent(final ID member) {
+      this.kind = SURPRISE_CONNECT;
+      this.member = member;
+    }
+
+    /**
+     * Indicate if this is a surprise connect event
+     *
+     * @return true if this is a connect event
+     */
+    boolean isSurpriseConnect() {
+      return this.kind == SURPRISE_CONNECT;
+    }
+
+    /**
+     * Create a view event
+     *
+     * @param v the new view
+     */
+    StartupEvent(MembershipView<ID> v) {
+      this.kind = VIEW;
+      this.gmsView = v;
+    }
+
+    /**
+     * Indicate if this is a view event
+     *
+     * @return true if this is a view event
+     */
+    boolean isGmsView() {
+      return this.kind == VIEW;
+    }
+
+    /**
+     * Create a message event
+     *
+     * @param d the message
+     */
+    StartupEvent(Message<ID> d) {
+      this.kind = MESSAGE;
+      this.dmsg = d;
+    }
+
+    /**
+     * Indicate if this is a message event
+     *
+     * @return true if this is a message event
+     */
+    boolean isDistributionMessage() {
+      return this.kind == MESSAGE;
+    }
+  }
 
   public class Stopper {
     volatile String reasonForStopping = null;

@@ -43,7 +43,7 @@ public interface MembershipConfig {
   boolean DEFAULT_ENABLE_NETWORK_PARTITION_DETECTION = true;
   int DEFAULT_MCAST_PORT = 0;
   String DEFAULT_LOCATORS = "";
-  String  DEFAULT_BIND_ADDRESS = "";
+  String DEFAULT_BIND_ADDRESS = "";
   String DEFAULT_SECURITY_PEER_AUTH_INIT = "";
   boolean DEFAULT_DISABLE_TCP = false;
   String DEFAULT_NAME = "";

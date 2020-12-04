@@ -64,15 +64,15 @@ public class MembershipLocatorImpl<ID extends MemberIdentifier> implements Membe
   private final TcpClient locatorClient;
 
   public MembershipLocatorImpl(int port, InetAddress bindAddress,
-                               ProtocolChecker protocolChecker,
-                               Supplier<ExecutorService> executorServiceSupplier,
-                               TcpSocketCreator socketCreator,
-                               ObjectSerializer objectSerializer,
-                               ObjectDeserializer objectDeserializer,
-                               TcpHandler fallbackHandler,
-                               boolean locatorsAreCoordinators,
-                               MembershipLocatorStatistics locatorStats, Path workingDirectory,
-                               MembershipConfig config)
+      ProtocolChecker protocolChecker,
+      Supplier<ExecutorService> executorServiceSupplier,
+      TcpSocketCreator socketCreator,
+      ObjectSerializer objectSerializer,
+      ObjectDeserializer objectDeserializer,
+      TcpHandler fallbackHandler,
+      boolean locatorsAreCoordinators,
+      MembershipLocatorStatistics locatorStats, Path workingDirectory,
+      MembershipConfig config)
       throws MembershipConfigurationException, UnknownHostException {
     handler =
         new PrimaryHandler(fallbackHandler, config.getLocatorWaitTime(),

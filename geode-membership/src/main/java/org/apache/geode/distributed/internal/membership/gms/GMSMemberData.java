@@ -20,8 +20,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.net.InetAddress;
-import java.util.HashMap;
-import java.util.Map;
 
 import com.google.protobuf.ByteString;
 import org.apache.commons.lang3.SerializationException;
@@ -658,7 +656,6 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData>, Ser
 
   /**
    * Protobuf serialization
-   * @return
    */
   public ByteString asByteString(DSFIDSerializer serializer) {
     BufferDataOutputStream out = new BufferDataOutputStream(KnownVersion.CURRENT);

@@ -14,14 +14,8 @@
  */
 package org.apache.geode.distributed.internal.membership.rapid;
 
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -36,16 +30,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.Logger;
 
-import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
 import org.apache.geode.distributed.internal.membership.api.MembershipConfigurationException;
 import org.apache.geode.distributed.internal.membership.api.MembershipLocatorStatistics;
 import org.apache.geode.distributed.internal.membership.api.MembershipView;
-import org.apache.geode.distributed.internal.membership.gms.GMSMemberData;
 import org.apache.geode.distributed.internal.membership.gms.GMSMembershipView;
 import org.apache.geode.distributed.internal.membership.gms.GMSUtil;
-import org.apache.geode.distributed.internal.membership.gms.Services;
-import org.apache.geode.distributed.internal.membership.gms.interfaces.Locator;
 import org.apache.geode.distributed.internal.membership.gms.locator.FindCoordinatorRequest;
 import org.apache.geode.distributed.internal.membership.gms.locator.FindCoordinatorResponse;
 import org.apache.geode.distributed.internal.membership.gms.locator.GetViewRequest;
@@ -55,11 +45,8 @@ import org.apache.geode.distributed.internal.tcpserver.HostAndPort;
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
 import org.apache.geode.distributed.internal.tcpserver.TcpHandler;
 import org.apache.geode.distributed.internal.tcpserver.TcpServer;
-import org.apache.geode.internal.serialization.KnownVersion;
 import org.apache.geode.internal.serialization.ObjectDeserializer;
 import org.apache.geode.internal.serialization.ObjectSerializer;
-import org.apache.geode.internal.serialization.VersionedDataInputStream;
-import org.apache.geode.internal.serialization.Versioning;
 import org.apache.geode.logging.internal.log4j.api.LogService;
 
 /**
@@ -114,11 +101,12 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
    * @param objectSerializer a serializer used to persist the membership view
    * @param objectDeserializer a deserializer used to recover the membership view
    */
-  public RapidSeedLocator(InetAddress bindAddress, String locatorString, boolean usePreferredCoordinators,
-                          boolean networkPartitionDetectionEnabled, MembershipLocatorStatistics locatorStats,
-                          String securityUDPDHAlgo, Path workingDirectory, final TcpClient locatorClient,
-                          ObjectSerializer objectSerializer,
-                          ObjectDeserializer objectDeserializer)
+  public RapidSeedLocator(InetAddress bindAddress, String locatorString,
+      boolean usePreferredCoordinators,
+      boolean networkPartitionDetectionEnabled, MembershipLocatorStatistics locatorStats,
+      String securityUDPDHAlgo, Path workingDirectory, final TcpClient locatorClient,
+      ObjectSerializer objectSerializer,
+      ObjectDeserializer objectDeserializer)
       throws MembershipConfigurationException {
     this.usePreferredCoordinators = usePreferredCoordinators;
     this.networkPartitionDetectionEnabled = networkPartitionDetectionEnabled;
@@ -151,7 +139,8 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
           localAddress);
       MembershipView<ID> newView = membership.getView();
       if (newView != null) {
-        view = new GMSMembershipView<ID>(newView.getCreator(), newView.getViewId(), newView.getMembers());
+        view = new GMSMembershipView<ID>(newView.getCreator(), newView.getViewId(),
+            newView.getMembers());
         recoveredView = null;
       } else {
         // if we are auto-reconnecting we may already have a membership view
@@ -201,7 +190,7 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
     }
 
     if (localAddress == null && membership != null) {
-      localAddress = (ID)membership.getLocalMember();
+      localAddress = (ID) membership.getLocalMember();
     }
 
     Object response = null;
@@ -311,8 +300,7 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
     locatorStats.endLocatorResponse(startTime);
   }
 
-  public void shutDown() {
-  }
+  public void shutDown() {}
 
   private boolean recoverFromOtherLocators() {
     for (HostAndPort other : locators) {
