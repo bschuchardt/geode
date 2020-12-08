@@ -182,6 +182,9 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
   public void installView(MembershipView<ID> view) {
     logger.info("Peer locator received new membership view: {}", view);
     this.view = new GMSMembershipView<ID>(view.getCreator(), view.getViewId(), view.getMembers());
+    synchronized(registrants) {
+      registrants.clear();
+    }
   }
 
   public Object processRequest(Object request) {

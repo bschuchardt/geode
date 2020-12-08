@@ -89,6 +89,15 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private final MembershipConfig membershipConfig;
   private final DSFIDSerializer serializer;
 
+  /**
+   * the address that the messenger is listening on
+   */
+  private HostAndPort listenAddress;
+  /**
+   * The Netty messenger used for membership communications
+   */
+  private NettyClientServer messenger;
+
   public MemberIdentifierFactory<ID> getMemberFactory() {
     return memberFactory;
   }
@@ -206,6 +215,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
    * Rapid Cluster object
    */
   private Cluster cluster;
+  private Cluster.Builder clusterBuilder;
 
   private ID localAddress;
   private volatile boolean shutdownInProgress;
@@ -358,7 +368,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   @Override
   public void disconnect(boolean beforeJoined) {
-    logger.info("BRUCE: MembershipImpl.disconnect() invoked");
     if (beforeJoined) {
       uncleanShutdown("Failed to start distribution", null);
     } else {
@@ -368,17 +377,21 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   @Override
   public void shutdown() {
-    logger.info("BRUCE: MembershipImpl.shutdown() invoked");
+    logger.info("Shutting down membership {}", localAddress);
     setShutdown();
-    cluster.leaveGracefully();
-    cluster.shutdown();
-    stop();
-    viewExecutor.shutdown();
+    try {
+      cluster.leaveGracefully();
+      messenger.shutdown();
+    } finally {
+      try {
+        stop();
+      } finally {
+        viewExecutor.shutdown();
+      }
+    }
   }
 
   private void stop() {
-    logger.info("BRUCE: MembershipImpl.stop() invoked");
-
     logger.debug("Membership closing");
 
     if (lifecycleListener.disconnect(null)) {
@@ -805,7 +818,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   public void start() throws MemberStartupException {
     isJoining = true;
     try {
-      logger.info("BRUCE: invoking join()");
       join();
       hasJoined = true;
       lifecycleListener.joinCompleted(localAddress);
@@ -881,17 +893,15 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     if (hostname == null || hostname.trim().isEmpty()) {
       hostname = LocalHostUtil.getLocalHost().getCanonicalHostName();
     }
-    logger.info("BRUCE: initializing netty with hostname {}", hostname);
     final Endpoint endpoint = Endpoint.newBuilder()
         .setHostname(ByteString.copyFromUtf8(hostname))
         .setPort(0).build();
-    final NettyClientServer messenger = new NettyClientServer(endpoint);
+    messenger = new NettyClientServer(endpoint);
     messenger.start();
 
-    logger.info("BRUCE: initializing local address");
     final int port = messenger.getBoundPort();
     final boolean isLocator = (membershipLocator != null);
-    // TODO use bind-address from config
+    logger.info("BRUCE: initializing local membership address with {}:{}", hostname, port);
     GMSMemberData gmsMember = new GMSMemberData(LocalHostUtil.getLocalHost(),
         hostname, port,
         OSProcess.getId(), (byte) membershipConfig.getVmKind(),
@@ -901,7 +911,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         membershipConfig.getDurableClientTimeout(),
         membershipConfig.isNetworkPartitionDetectionEnabled(), isLocator,
         KnownVersion.getCurrentVersion().ordinal(),
-        0, 0,
+        System.currentTimeMillis(), System.nanoTime(),
         (byte) (membershipConfig.getMemberWeight() & 0xff), false, null);
 
     localAddress = memberFactory.create(gmsMember);
@@ -912,18 +922,17 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     Map<String, ByteString> metadata = new HashMap<>();
     metadata.put("gmsmember", gmsMember.asByteString(serializer));
 
-    HostAndPort listenAddress = HostAndPort.fromParts(hostname, port);
-    logger.info("BRUCE: established listen address of " + listenAddress);
+    listenAddress = HostAndPort.fromParts(hostname, port);
 
     // TODO: support for multiple locators is not implemented
-    Cluster.Builder builder = new Cluster.Builder(listenAddress)
+    clusterBuilder = new Cluster.Builder(listenAddress)
         .setMessagingClientAndServer(messenger, messenger)
         .setMetadata(metadata);
-    builder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
         this::onViewChangeProposal);
-    builder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
         this::onViewChange);
-    builder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
         this::onKicked);
     // final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort>
     // locatorHostsAndPorts =
@@ -937,7 +946,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       logger.info("BRUCE: seed address is " + seedAddress);
       if (!seedAddress.equals(localAddress)) {
         logger.info("BRUCE: joining existing cluster");
-        cluster = builder.join(seedAddress);
+        cluster = clusterBuilder.join(seedAddress);
       }
     } catch (MemberStartupException e) {
       if (membershipLocator == null) {
@@ -954,7 +963,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
     if (cluster == null) {
       logger.info("BRUCE: starting new cluster");
-      cluster = builder.start();
+      cluster = clusterBuilder.start();
     }
     // todo need wait/notify or a Promise/Future of some kind here
     logger.info("BRUCE: waiting for initial membership view");
@@ -977,9 +986,14 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     logger.info("BRUCE: finished joining the cluster");
   }
 
+  /**
+   * Notification from Rapid that this node has been kicked out of the cluster
+   * @param viewID
+   * @param nodeStatusChanges
+   */
   private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
     {
-      logger.info("BRUCE: onKicked: " + nodeStatusChanges);
+      logger.info("BRUCE: Rapid.onKicked: " + nodeStatusChanges);
       if (shutdownInProgress || isJoining()) {
         return;
       }
@@ -998,6 +1012,8 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
           shutdownCause);
       // }
 
+      // todo will we continue to support auto-reconnect?  It's useful for handling kicked-out
+      // todo members due to GC pauses
       // if (this.isReconnectingDS()) {
       // logger.info("Reconnecting system failed to connect");
       // uncleanShutdown(reason,
@@ -1016,23 +1032,74 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
   }
 
+  /**
+   * When there is (probably) going to be a view change Rapid will invoke this callback.
+   * Being concensus based, Rapid will not cast a new view if the number of nodes drops to
+   * one, so we take this opportunity to detect that situation and cast a local view change.
+   * @param viewID
+   * @param nodeStatusChanges
+   */
+  private void onViewChangeProposal(long viewID, List<NodeStatusChange> nodeStatusChanges) {
+    logger.info("BRUCE: " + localAddress + " Rapid.onViewChangeProposal: " + nodeStatusChanges);
+    try {
+      // if we're still joining we can punt to onViewChange to process the changes
+      if (latestView == null) {
+        return;
+      }
+      // if a new node is joining we can wait until onViewChange to process the changes
+      boolean addingNewNode = nodeStatusChanges.stream()
+          .anyMatch(nodeStatusChange -> nodeStatusChange.getStatus() == EdgeStatus.UP);
+      if (addingNewNode) {
+        return;
+      }
+      checkBecomeSoleMember(viewID, nodeStatusChanges);
+    } catch (RuntimeException | Error t) {
+      t.printStackTrace();
+      throw t;
+    }
+  }
+
+  private void checkBecomeSoleMember(long viewID, List<NodeStatusChange> nodeStatusChanges) {
+    // here we try to detect whether the cluster has devolved to a single member (this node)
+    MembershipView<ID> newView = createGeodeView(latestView, viewID, nodeStatusChanges);
+    if (newView.size() == 1 && newView.contains(localAddress)) {
+      logger.info("BRUCE: becoming sole member of the cluster", new Exception("stack trace"));
+      handleOrDeferViewEvent(newView);
+      cluster.shutdownForRestart();
+      Map<String, ByteString> metadata = new HashMap<>();
+      metadata.put("gmsmember", ((GMSMemberData)localAddress.getMemberData()).asByteString(serializer));
+      clusterBuilder.setMetadata(metadata);
+      try {
+        cluster = clusterBuilder.restart();
+      } catch (IOException e) {
+        setShutdown();
+        final Exception shutdownCause = new MemberDisconnectedException("unable to restart cluster: " + e);
+        logger.fatal(
+            String.format("Membership service failure: %s", shutdownCause.getMessage()),
+            shutdownCause);
+        try {
+          membershipListener.saveConfig();
+        } finally {
+          new LoggingThread("DisconnectThread", false, () -> {
+            lifecycleListener.forcedDisconnect();
+            uncleanShutdown(shutdownCause.getMessage(), shutdownCause);
+          }).start();
+        }
+      }
+    }
+  }
+
   private synchronized void onViewChange(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    logger.info("BRUCE: " + localAddress + " onViewChange: " + nodeStatusChanges);
+    logger.info("BRUCE: " + localAddress + " Rapid.onViewChange: " + nodeStatusChanges);
     MembershipView<ID> currentView = latestView;
     if (firstView && !isConnected()) {
       firstView = false;
       latestView = createGeodeView(currentView, viewID, nodeStatusChanges);
-      logger.info("BRUCE: created new view {}", latestView);
+      logger.info("BRUCE: created initial view {}", latestView);
       logger.debug("Membership: initial view is {}", latestView);
     } else {
       handleOrDeferViewEvent(createGeodeView(currentView, viewID, nodeStatusChanges));
-      logger.info("BRUCE: created new view {}", latestView);
     }
-  }
-
-  private void onViewChangeProposal(long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    // TODO: anything to do here?
-    logger.info("BRUCE: " + localAddress + " onViewChangeProposal: " + nodeStatusChanges);
   }
 
   private MembershipView<ID> createGeodeView(MembershipView<ID> baseView, long viewID,
@@ -1044,9 +1111,13 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     newView.removeAll(viewChanges.getCrashedMembers());
     newView.removeAll(viewChanges.getShutdownMembers());
     for (ID member : viewChanges.getMembers()) {
-      newView.add(member);
+      if (!newView.contains(member)) {
+        logger.info("BRUCE: adding new member {}", member);
+        newView.add(member);
+      }
     }
     newView.makeUnmodifiable();
+    logger.info("BRUCE: created new view from nodeStatusChanges: {}", newView);
     return newView;
   }
 
@@ -1065,6 +1136,28 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       } else {
         downnodes.add(geodeMember);
       }
+      // TODO: since Rapid has no stable ordering in its views we attempt to impose one here based
+      // on clock readings.  This is not a long-term solution since clocks may not be sufficiently
+      // synchronized
+      Collections.sort(upnodes, (a,b)-> {
+        long aMillis = a.getUuidMostSignificantBits();
+        long bMillis = b.getUuidMostSignificantBits();
+        if (aMillis < bMillis) {
+          return -1;
+        }
+        if (bMillis > aMillis) {
+          return 1;
+        }
+        long aNanos = a.getUuidLeastSignificantBits();
+        long bNanos = b.getUuidLeastSignificantBits();
+        if (aNanos < bNanos) {
+          return -1;
+        }
+        if (bNanos > aNanos) {
+          return 1;
+        }
+        return 0;
+      });
     }
     // treat all missing members as having crashed. DistributionImpl will know if a
     // shutdown message has been received and can invoke the proper listener callback based
