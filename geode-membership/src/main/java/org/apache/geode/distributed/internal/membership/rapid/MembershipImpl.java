@@ -985,53 +985,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
     logger.info("BRUCE: finished joining the cluster");
   }
-
-  /**
-   * Notification from Rapid that this node has been kicked out of the cluster
-   * @param viewID
-   * @param nodeStatusChanges
-   */
-  private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    {
-      logger.info("BRUCE: Rapid.onKicked: " + nodeStatusChanges);
-      if (shutdownInProgress || isJoining()) {
-        return;
-      }
-
-      setShutdown();
-
-      final Exception shutdownCause = new MemberDisconnectedException(nodeStatusChanges.toString());
-
-      // cache the exception so it can be appended to ShutdownExceptions
-      // services.setShutdownCause(shutdownCause);
-      // services.getCancelCriterion().cancel(reason);
-
-      // if (!inhibitForceDisconnectLogging) {
-      logger.fatal(
-          String.format("Membership service failure: %s", shutdownCause.getMessage()),
-          shutdownCause);
-      // }
-
-      // todo will we continue to support auto-reconnect?  It's useful for handling kicked-out
-      // todo members due to GC pauses
-      // if (this.isReconnectingDS()) {
-      // logger.info("Reconnecting system failed to connect");
-      // uncleanShutdown(reason,
-      // new MemberDisconnectedException("reconnecting system failed to connect"));
-      // return;
-      // }
-
-      try {
-        membershipListener.saveConfig();
-      } finally {
-        new LoggingThread("DisconnectThread", false, () -> {
-          lifecycleListener.forcedDisconnect();
-          uncleanShutdown(shutdownCause.getMessage(), shutdownCause);
-        }).start();
-      }
-    }
-  }
-
   /**
    * When there is (probably) going to be a view change Rapid will invoke this callback.
    * Being concensus based, Rapid will not cast a new view if the number of nodes drops to
@@ -1164,6 +1117,53 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     // on that knowledge
     return new MembershipView<ID>(geodeCreator, (int) (viewId & 0x7FFFFFFF), upnodes,
         Collections.emptySet(), downnodes);
+  }
+
+
+  /**
+   * Notification from Rapid that this node has been kicked out of the cluster
+   * @param viewID
+   * @param nodeStatusChanges
+   */
+  private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
+    {
+      logger.info("BRUCE: Rapid.onKicked: " + nodeStatusChanges);
+      if (shutdownInProgress || isJoining()) {
+        return;
+      }
+
+      setShutdown();
+
+      final Exception shutdownCause = new MemberDisconnectedException(nodeStatusChanges.toString());
+
+      // cache the exception so it can be appended to ShutdownExceptions
+      // services.setShutdownCause(shutdownCause);
+      // services.getCancelCriterion().cancel(reason);
+
+      // if (!inhibitForceDisconnectLogging) {
+      logger.fatal(
+          String.format("Membership service failure: %s", shutdownCause.getMessage()),
+          shutdownCause);
+      // }
+
+      // todo will we continue to support auto-reconnect?  It's useful for handling kicked-out
+      // todo members due to GC pauses
+      // if (this.isReconnectingDS()) {
+      // logger.info("Reconnecting system failed to connect");
+      // uncleanShutdown(reason,
+      // new MemberDisconnectedException("reconnecting system failed to connect"));
+      // return;
+      // }
+
+      try {
+        membershipListener.saveConfig();
+      } finally {
+        new LoggingThread("DisconnectThread", false, () -> {
+          lifecycleListener.forcedDisconnect();
+          uncleanShutdown(shutdownCause.getMessage(), shutdownCause);
+        }).start();
+      }
+    }
   }
 
   protected void handleOrDeferViewEvent(MembershipView<ID> viewArg) {
@@ -1501,6 +1501,8 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     throw new MemberStartupException("unable to contact any locators");
   }
 
+  // todo this needs work - it's not detecting that the fqdn:port of the local locator is
+  // todo already in the list
   private void addLocalLocatorIfMissing(
       List<org.apache.geode.distributed.internal.tcpserver.HostAndPort> locators)
       throws MembershipConfigurationException {
