@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.Logger;
+import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import org.apache.geode.annotations.Immutable;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
@@ -264,10 +265,11 @@ public class GMSMembershipView<ID extends MemberIdentifier> implements DataSeria
    * return members added in this view
    */
   public List<ID> getNewMembers() {
-    List<ID> result = new ArrayList<>(5);
-    result.addAll(this.members.stream().filter(mbr -> mbr.getVmViewId() == this.viewId)
-        .collect(Collectors.toList()));
-    return result;
+    throw new NotImplementedException();
+//    List<ID> result = new ArrayList<>(5);
+//    result.addAll(this.members.stream().filter(mbr -> mbr.getVmViewId() == this.viewId)
+//        .collect(Collectors.toList()));
+//    return result;
   }
 
   public boolean remove(ID mbr) {

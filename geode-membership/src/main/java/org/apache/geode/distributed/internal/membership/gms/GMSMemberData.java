@@ -654,33 +654,4 @@ public class GMSMemberData implements MemberData, Comparable<GMSMemberData>, Ser
     uniqueTag = tag;
   }
 
-  /**
-   * Protobuf serialization
-   */
-  public ByteString asByteString(DSFIDSerializer serializer) {
-    BufferDataOutputStream out = new BufferDataOutputStream(KnownVersion.CURRENT);
-    SerializationContext context = serializer.createSerializationContext(out);
-    try {
-      writeEssentialData(out, context);
-      writeAdditionalData(out);
-    } catch (IOException e) {
-      throw new SerializationException("error serializing an identifier", e);
-    }
-    return ByteString.copyFrom(out.toByteBuffer());
-  }
-
-  /**
-   * Protobuf deserialization
-   */
-  public GMSMemberData(ByteString byteString, DSFIDSerializer serializer) {
-    ByteArrayDataInput input = new ByteArrayDataInput(byteString.toByteArray());
-    DeserializationContext context = serializer.createDeserializationContext(input);
-    try {
-      readEssentialData(input, context);
-      readAdditionalData(input);
-      isPartial = false;
-    } catch (IOException | ClassNotFoundException e) {
-      throw new SerializationException("error serializing an identifier", e);
-    }
-  }
 }

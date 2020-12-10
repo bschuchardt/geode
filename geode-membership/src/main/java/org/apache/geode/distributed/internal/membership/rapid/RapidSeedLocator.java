@@ -182,7 +182,7 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
   public void installView(MembershipView<ID> view) {
     logger.info("Peer locator received new membership view: {}", view);
     this.view = new GMSMembershipView<ID>(view.getCreator(), view.getViewId(), view.getMembers());
-    synchronized(registrants) {
+    synchronized (registrants) {
       registrants.clear();
     }
   }
@@ -198,10 +198,12 @@ public class RapidSeedLocator<ID extends MemberIdentifier> implements TcpHandler
 
     Object response = null;
     if (request instanceof GetViewRequest) {
+      logger.info("BRUCE: processing a GetViewRequest");
       if (view != null) {
         response = new GetViewResponse<>(new GMSMembershipView<ID>(view.getCreator(),
             view.getViewId(), view.getMembers()));
       }
+      logger.info("BRUCE: returning view " + view);
     } else if (request instanceof FindCoordinatorRequest) {
       response = processFindCoordinatorRequest((FindCoordinatorRequest<ID>) request);
     }

@@ -881,7 +881,7 @@ public class Connection implements Runnable {
     InternalDistributedMember myAddr = owner.getConduit().getMemberId();
     synchronized (myAddr) {
       while (!owner.getConduit().getCancelCriterion().isCancelInProgress()
-          && myAddr.getInetAddress() == null && myAddr.getVmViewId() < 0) {
+          && myAddr.getInetAddress() == null /* && myAddr.getVmViewId() < 0*/) {
         try {
           myAddr.wait(100); // spurious wakeup ok
         } catch (InterruptedException ie) {

@@ -739,29 +739,31 @@ public class GMSMembership<ID extends MemberIdentifier> implements Membership<ID
       if (surpriseMembers.containsKey(member)) {
         return true;
       }
-      if (member.getVmViewId() < 0) {
-        logger.warn(
-            "adding a surprise member that has not yet joined the distributed system: " + member,
-            new Exception("stack trace"));
-      }
-      if (latestView.getViewId() > member.getVmViewId()) {
-        // tell the process that it should shut down distribution.
-        // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
-        new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
-          // fix for bug #42548
-          // this is an old member that shouldn't be added
-          logger.warn("attempt to add old member: {} as surprise member to {}",
-              member, latestView);
-          try {
-            requestMemberRemoval(member,
-                "this member is no longer in the view but is initiating connections");
-          } catch (MembershipClosedException | MemberDisconnectedException e) {
-            // okay to ignore
-          }
-        }).start();
-        addShunnedMember(member);
-        return false;
-      }
+
+      // todo rejection of rogue members that were kicked out but are still hanging around
+//      if (member.getVmViewId() < 0) {
+//        logger.warn(
+//            "adding a surprise member that has not yet joined the distributed system: " + member,
+//            new Exception("stack trace"));
+//      }
+//      if (latestView.getViewId() > member.getVmViewId()) {
+//        // tell the process that it should shut down distribution.
+//        // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
+//        new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
+//          // fix for bug #42548
+//          // this is an old member that shouldn't be added
+//          logger.warn("attempt to add old member: {} as surprise member to {}",
+//              member, latestView);
+//          try {
+//            requestMemberRemoval(member,
+//                "this member is no longer in the view but is initiating connections");
+//          } catch (MembershipClosedException | MemberDisconnectedException e) {
+//            // okay to ignore
+//          }
+//        }).start();
+//        addShunnedMember(member);
+//        return false;
+//      }
 
       // Adding the member to this set ensures we won't remove it if a new
       // view comes in and it is still not visible.

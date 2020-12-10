@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
+import com.google.protobuf.ByteString;
+import org.apache.commons.lang3.SerializationException;
 import org.apache.commons.validator.routines.InetAddressValidator;
 import org.jgroups.util.UUID;
 
@@ -41,6 +43,9 @@ import org.apache.geode.annotations.VisibleForTesting;
 import org.apache.geode.distributed.internal.membership.api.MemberData;
 import org.apache.geode.distributed.internal.membership.api.MemberDataBuilder;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
+import org.apache.geode.internal.serialization.BufferDataOutputStream;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
+import org.apache.geode.internal.serialization.DSFIDSerializer;
 import org.apache.geode.internal.serialization.DataSerializableFixedID;
 import org.apache.geode.internal.serialization.DeserializationContext;
 import org.apache.geode.internal.serialization.KnownVersion;

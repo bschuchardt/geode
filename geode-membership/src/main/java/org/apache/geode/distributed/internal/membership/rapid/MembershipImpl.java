@@ -14,9 +14,13 @@
  */
 package org.apache.geode.distributed.internal.membership.rapid;
 
+import static org.apache.geode.distributed.internal.membership.gms.membership.GMSJoinLeave.BYPASS_DISCOVERY_PROPERTY;
+import static org.apache.geode.distributed.internal.membership.gms.membership.GMSJoinLeave.JOIN_RETRY_SLEEP;
+
 import java.io.IOException;
 import java.io.NotSerializableException;
 import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -43,6 +47,7 @@ import com.vrg.rapid.messaging.impl.NettyClientServer;
 import com.vrg.rapid.pb.EdgeStatus;
 import com.vrg.rapid.pb.Endpoint;
 import com.vrg.rapid.pb.Metadata;
+import org.apache.commons.lang3.SerializationException;
 import org.apache.logging.log4j.Logger;
 import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
@@ -73,8 +78,13 @@ import org.apache.geode.distributed.internal.membership.gms.locator.FindCoordina
 import org.apache.geode.distributed.internal.tcpserver.TcpClient;
 import org.apache.geode.distributed.internal.tcpserver.TcpSocketCreator;
 import org.apache.geode.internal.inet.LocalHostUtil;
+import org.apache.geode.internal.serialization.BufferDataOutputStream;
+import org.apache.geode.internal.serialization.ByteArrayDataInput;
 import org.apache.geode.internal.serialization.DSFIDSerializer;
+import org.apache.geode.internal.serialization.DataSerializableFixedID;
+import org.apache.geode.internal.serialization.DeserializationContext;
 import org.apache.geode.internal.serialization.KnownVersion;
+import org.apache.geode.internal.serialization.SerializationContext;
 import org.apache.geode.logging.internal.OSProcess;
 import org.apache.geode.logging.internal.executors.LoggingExecutors;
 import org.apache.geode.logging.internal.executors.LoggingThread;
@@ -83,6 +93,7 @@ import org.apache.geode.util.internal.GeodeGlossary;
 
 public class MembershipImpl<ID extends MemberIdentifier> implements Membership<ID> {
   private static final Logger logger = LogService.getLogger();
+  public static final String GEODE_ID = "geodeId";
 
   private final MembershipStatistics statistics;
   private final Authenticator<ID> authenticator;
@@ -97,6 +108,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
    * The Netty messenger used for membership communications
    */
   private NettyClientServer messenger;
+
+  /**
+   * registrants during discovery
+   */
+  private Set<ID> registrants;
 
   public MemberIdentifierFactory<ID> getMemberFactory() {
     return memberFactory;
@@ -651,29 +667,29 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       if (surpriseMembers.containsKey(member)) {
         return true;
       }
-      if (member.getVmViewId() < 0) {
-        logger.warn(
-            "adding a surprise member that has not yet joined the distributed system: " + member,
-            new Exception("stack trace"));
-      }
-      if (latestView.getViewId() > member.getVmViewId()) {
-        // tell the process that it should shut down distribution.
-        // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
-        new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
-          // fix for bug #42548
-          // this is an old member that shouldn't be added
-          logger.warn("attempt to add old member: {} as surprise member to {}",
-              member, latestView);
-          try {
-            requestMemberRemoval(member,
-                "this member is no longer in the view but is initiating connections");
-          } catch (MembershipClosedException | MemberDisconnectedException e) {
-            // okay to ignore
-          }
-        }).start();
-        addShunnedMember(member);
-        return false;
-      }
+//      if (member.getVmViewId() < 0) {
+//        logger.warn(
+//            "adding a surprise member that has not yet joined the distributed system: " + member,
+//            new Exception("stack trace"));
+//      }
+//      if (latestView.getViewId() > member.getVmViewId()) {
+//        // tell the process that it should shut down distribution.
+//        // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
+//        new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
+//          // fix for bug #42548
+//          // this is an old member that shouldn't be added
+//          logger.warn("attempt to add old member: {} as surprise member to {}",
+//              member, latestView);
+//          try {
+//            requestMemberRemoval(member,
+//                "this member is no longer in the view but is initiating connections");
+//          } catch (MembershipClosedException | MemberDisconnectedException e) {
+//            // okay to ignore
+//          }
+//        }).start();
+//        addShunnedMember(member);
+//        return false;
+//      }
 
       // Adding the member to this set ensures we won't remove it if a new
       // view comes in and it is still not visible.
@@ -893,81 +909,97 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     if (hostname == null || hostname.trim().isEmpty()) {
       hostname = LocalHostUtil.getLocalHost().getCanonicalHostName();
     }
-    final Endpoint endpoint = Endpoint.newBuilder()
-        .setHostname(ByteString.copyFromUtf8(hostname))
-        .setPort(0).build();
-    messenger = new NettyClientServer(endpoint);
-    messenger.start();
+    final int port = startNettyAndGetPort(hostname);
 
-    final int port = messenger.getBoundPort();
-    final boolean isLocator = (membershipLocator != null);
-    logger.info("BRUCE: initializing local membership address with {}:{}", hostname, port);
-    GMSMemberData gmsMember = new GMSMemberData(LocalHostUtil.getLocalHost(),
-        hostname, port,
-        OSProcess.getId(), (byte) membershipConfig.getVmKind(),
-        -1 /* directport */, -1 /* viewID */, membershipConfig.getName(),
-        GMSUtil.parseGroups(membershipConfig.getRoles(), membershipConfig.getGroups()),
-        membershipConfig.getDurableClientId(),
-        membershipConfig.getDurableClientTimeout(),
-        membershipConfig.isNetworkPartitionDetectionEnabled(), isLocator,
-        KnownVersion.getCurrentVersion().ordinal(),
-        System.currentTimeMillis(), System.nanoTime(),
-        (byte) (membershipConfig.getMemberWeight() & 0xff), false, null);
-
-    localAddress = memberFactory.create(gmsMember);
-    lifecycleListener.start(localAddress);
+    establishLocalAddress(hostname, port);
+    logger.info("BRUCE: local address is {}", localAddress);
 
     // establish the serialized form of our identifier after the lifecycleListener has established
     // the directChannel port. Otherwise it's -1.
     Map<String, ByteString> metadata = new HashMap<>();
-    metadata.put("gmsmember", gmsMember.asByteString(serializer));
+    metadata.put(GEODE_ID, objectToByteString(localAddress, serializer));
 
     listenAddress = HostAndPort.fromParts(hostname, port);
 
-    // TODO: support for multiple locators is not implemented
-    clusterBuilder = new Cluster.Builder(listenAddress)
-        .setMessagingClientAndServer(messenger, messenger)
-        .setMetadata(metadata);
-    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
-        this::onViewChangeProposal);
-    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
-        this::onViewChange);
-    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
-        this::onKicked);
-    // final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort>
-    // locatorHostsAndPorts =
-    // GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
+    initializeClusterBuilder(metadata);
+
+    boolean bypassDiscovery = Boolean.getBoolean(BYPASS_DISCOVERY_PROPERTY);
+
+    // concurrent startup loop
+    int tries = 0;
+    long timeout = membershipConfig.getJoinTimeout();
+    long giveupTime = System.currentTimeMillis() + timeout;
+
+    final int triesBeforeVoting = 10;
     HostAndPort seedAddress = null;
-    // TODO: this needs to handle concurrent startup for the Rapid implementation. Looping
-    // is probably needed, as in GMSJoinLeave
-    try {
-      logger.info("BRUCE: finding seed address from locator");
-      seedAddress = findSeedAddressFromLocators();
-      logger.info("BRUCE: seed address is " + seedAddress);
-      if (!seedAddress.equals(localAddress)) {
-        logger.info("BRUCE: joining existing cluster");
-        cluster = clusterBuilder.join(seedAddress);
+    do {
+      if (bypassDiscovery) {
+        logger.info("bypassDiscovery is set - starting new cluster");
+        cluster = clusterBuilder.start();
+        break;
       }
-    } catch (MemberStartupException e) {
-      if (membershipLocator == null) {
-        throw e;
+      try {
+        logger.info("BRUCE: finding seed address from locator.  This is attempt #" + (tries + 1));
+        seedAddress = findSeedAddressFromLocators();
+        logger.info("BRUCE: seed address is " + seedAddress);
+        if (!seedAddress.equals(listenAddress)) {
+          logger.info("BRUCE: joining existing cluster");
+          cluster = clusterBuilder.join(seedAddress);
+          break;
+        }
+      } catch (MemberStartupException e) {
+        if (membershipLocator == null) {
+          throw e;
+        }
+        tries++;
+      } catch (Cluster.JoinException e) {
+        logger.info("Unable to join cluster using seed {}", seedAddress, e);
+        // TODO here we should record the failed seed address and loop to try another one.
+        // Without doing this we are only supporting a single locator and may have trouble
+        // rejoining when all seeds are down and we've recovered the view from disk
+        if (membershipLocator == null) {
+          throw new MemberStartupException("Unable to join the cluster", e);
+        }
+        tries++;
       }
-    } catch (Cluster.JoinException e) {
-      logger.info("Unable to join cluster using seed {}", seedAddress, e);
-      // TODO here we should record the failed seed address and loop to try another one.
-      // Without doing this we are only supporting a single locator and may have trouble
-      // rejoining when all seeds are down and we've recovered the view from disk
-      if (membershipLocator == null) {
-        throw new MemberStartupException("Unable to join the cluster", e);
+      if (cluster == null) {
+        if (tries >= triesBeforeVoting) {
+          List listOfRegistrants = new ArrayList(registrants.size());
+          listOfRegistrants.addAll(registrants);
+          Collections.sort(listOfRegistrants);
+          ID bestChoice = (ID) listOfRegistrants.get(0);
+          seedAddress =
+              HostAndPort.fromParts(bestChoice.getHostName(), bestChoice.getMembershipPort());
+          logger.info("BRUCE: lead registrant address is " + seedAddress);
+          try {
+            if (bestChoice.equals(localAddress)) {
+              logger.info("BRUCE: I am the lead registrant - starting new cluster");
+              cluster = clusterBuilder.start();
+            } else {
+              logger.info("BRUCE: joining with lead registrant");
+              cluster = clusterBuilder.join(seedAddress);
+            }
+          } catch (Cluster.JoinException e) {
+            throw new MemberStartupException("Unable to join the cluster", e);
+          }
+        } else {
+          try {
+            Thread.sleep(JOIN_RETRY_SLEEP);
+          } catch (InterruptedException e) {
+            throw new MemberStartupException("join attempt was interrupted");
+          }
+        }
       }
-    }
+    } while (cluster == null && System.currentTimeMillis() < giveupTime);
+
     if (cluster == null) {
-      logger.info("BRUCE: starting new cluster");
-      cluster = clusterBuilder.start();
+      throw new MemberStartupException("unable to join the cluster in the allotted amount of time");
     }
+
+    // at this point we have joined but may not (yet) have a membership view
+
     // todo need wait/notify or a Promise/Future of some kind here
     logger.info("BRUCE: waiting for initial membership view");
-    long giveupTime = System.currentTimeMillis() + membershipConfig.getJoinTimeout();
     while (latestView == null && giveupTime < System.currentTimeMillis()) {
       try {
         Thread.sleep(100);
@@ -985,12 +1017,50 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
     logger.info("BRUCE: finished joining the cluster");
   }
+
+  protected void initializeClusterBuilder(Map<String, ByteString> metadata) {
+    clusterBuilder = new Cluster.Builder(listenAddress)
+        .setMessagingClientAndServer(messenger, messenger)
+        .setMetadata(metadata);
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE_PROPOSAL,
+        this::onViewChangeProposal);
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.VIEW_CHANGE,
+        this::onViewChange);
+    clusterBuilder.addSubscription(com.vrg.rapid.ClusterEvents.KICKED,
+        this::onKicked);
+  }
+
+  protected void establishLocalAddress(String hostname, int port) throws UnknownHostException {
+    final boolean isLocator = (membershipLocator != null);
+    GMSMemberData gmsMember = new GMSMemberData(LocalHostUtil.getLocalHost(),
+        hostname, port,
+        OSProcess.getId(), (byte) membershipConfig.getVmKind(),
+        -1 /* directport */, 0 /* viewID */, membershipConfig.getName(),
+        GMSUtil.parseGroups(membershipConfig.getRoles(), membershipConfig.getGroups()),
+        membershipConfig.getDurableClientId(),
+        membershipConfig.getDurableClientTimeout(),
+        membershipConfig.isNetworkPartitionDetectionEnabled(), isLocator,
+        KnownVersion.getCurrentVersion().ordinal(),
+        System.currentTimeMillis(), System.nanoTime(),
+        (byte) (membershipConfig.getMemberWeight() & 0xff), false, null);
+
+    localAddress = memberFactory.create(gmsMember);
+    lifecycleListener.start(localAddress);
+  }
+
+  protected int startNettyAndGetPort(String hostname) {
+    final Endpoint endpoint = Endpoint.newBuilder()
+        .setHostname(ByteString.copyFromUtf8(hostname))
+        .setPort(0).build();
+    messenger = new NettyClientServer(endpoint);
+    messenger.start();
+    return messenger.getBoundPort();
+  }
+
   /**
    * When there is (probably) going to be a view change Rapid will invoke this callback.
    * Being concensus based, Rapid will not cast a new view if the number of nodes drops to
    * one, so we take this opportunity to detect that situation and cast a local view change.
-   * @param viewID
-   * @param nodeStatusChanges
    */
   private void onViewChangeProposal(long viewID, List<NodeStatusChange> nodeStatusChanges) {
     logger.info("BRUCE: " + localAddress + " Rapid.onViewChangeProposal: " + nodeStatusChanges);
@@ -1020,13 +1090,14 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       handleOrDeferViewEvent(newView);
       cluster.shutdownForRestart();
       Map<String, ByteString> metadata = new HashMap<>();
-      metadata.put("gmsmember", ((GMSMemberData)localAddress.getMemberData()).asByteString(serializer));
+      metadata.put(GEODE_ID, objectToByteString(localAddress, serializer));
       clusterBuilder.setMetadata(metadata);
       try {
         cluster = clusterBuilder.restart();
       } catch (IOException e) {
         setShutdown();
-        final Exception shutdownCause = new MemberDisconnectedException("unable to restart cluster: " + e);
+        final Exception shutdownCause =
+            new MemberDisconnectedException("unable to restart cluster: " + e);
         logger.fatal(
             String.format("Membership service failure: %s", shutdownCause.getMessage()),
             shutdownCause);
@@ -1065,6 +1136,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     newView.removeAll(viewChanges.getShutdownMembers());
     for (ID member : viewChanges.getMembers()) {
       if (!newView.contains(member)) {
+        // todo here we could inform the View that this is a new member for its getNewMembers method
         logger.info("BRUCE: adding new member {}", member);
         newView.add(member);
       }
@@ -1081,18 +1153,16 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     Set<ID> downnodes = new HashSet<>(nodeStatusChanges.size());
     for (NodeStatusChange nodeStatusChange : nodeStatusChanges) {
       Metadata metadata = nodeStatusChange.getMetadata();
-      GMSMemberData gmsMemberData =
-          new GMSMemberData(metadata.getMetadataMap().get("gmsmember"), serializer);
-      ID geodeMember = memberFactory.create(gmsMemberData);
+      ID geodeMember = (ID)byteStringToObject(metadata.getMetadataMap().get(GEODE_ID), serializer);
       if (nodeStatusChange.getStatus() == EdgeStatus.UP) {
         upnodes.add(geodeMember);
       } else {
         downnodes.add(geodeMember);
       }
       // TODO: since Rapid has no stable ordering in its views we attempt to impose one here based
-      // on clock readings.  This is not a long-term solution since clocks may not be sufficiently
+      // on clock readings. This is not a long-term solution since clocks may not be sufficiently
       // synchronized
-      Collections.sort(upnodes, (a,b)-> {
+      Collections.sort(upnodes, (a, b) -> {
         long aMillis = a.getUuidMostSignificantBits();
         long bMillis = b.getUuidMostSignificantBits();
         if (aMillis < bMillis) {
@@ -1122,8 +1192,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   /**
    * Notification from Rapid that this node has been kicked out of the cluster
-   * @param viewID
-   * @param nodeStatusChanges
    */
   private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
     {
@@ -1146,7 +1214,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
           shutdownCause);
       // }
 
-      // todo will we continue to support auto-reconnect?  It's useful for handling kicked-out
+      // todo will we continue to support auto-reconnect? It's useful for handling kicked-out
       // todo members due to GC pauses
       // if (this.isReconnectingDS()) {
       // logger.info("Reconnecting system failed to connect");
@@ -1478,6 +1546,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     final List<org.apache.geode.distributed.internal.tcpserver.HostAndPort> locators =
         GMSUtil.parseLocators(membershipConfig.getLocators(), membershipConfig.getBindAddress());
     addLocalLocatorIfMissing(locators);
+    registrants = new HashSet<>();
     for (org.apache.geode.distributed.internal.tcpserver.HostAndPort locator : locators) {
       try {
         Object o = locatorClient.requestToServer(locator, request, connectTimeout, true);
@@ -1490,6 +1559,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
             return HostAndPort.fromParts(responseCoordinator.getHostName(),
                 responseCoordinator.getMembershipPort());
           }
+          registrants.addAll(response.getRegistrants());
         }
       } catch (ConnectException e) {
         // unable to contact this locator
@@ -1522,9 +1592,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
               membershipLocator.getPort());
       if (!locators.contains(localLocator)) {
         locators.add(localLocator);
-        logger.info(
-            "BRUCE: added local locator to provided locator list.  For discovery the locator list is "
-                + locators);
       }
     }
   }
@@ -1744,5 +1811,30 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
 
   }
+
+  public ByteString objectToByteString(DataSerializableFixedID object, DSFIDSerializer serializer) {
+    BufferDataOutputStream out = new BufferDataOutputStream(KnownVersion.CURRENT);
+    SerializationContext context = serializer.createSerializationContext(out);
+    try {
+      context.getSerializer().writeObject(object, out);
+    } catch (IOException e) {
+      throw new SerializationException("error serializing an identifier", e);
+    }
+    return ByteString.copyFrom(out.toByteBuffer());
+  }
+
+  /**
+   * Protobuf deserialization
+   */
+  public DataSerializableFixedID byteStringToObject(ByteString byteString, DSFIDSerializer serializer) {
+    ByteArrayDataInput input = new ByteArrayDataInput(byteString.toByteArray());
+    DeserializationContext context = serializer.createDeserializationContext(input);
+    try {
+      return serializer.getObjectDeserializer().readObject(input);
+    } catch (IOException | ClassNotFoundException e) {
+      throw new SerializationException("error serializing an identifier", e);
+    }
+  }
+
 
 }
