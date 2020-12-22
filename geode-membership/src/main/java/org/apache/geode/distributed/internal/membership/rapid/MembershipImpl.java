@@ -905,6 +905,9 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     // final int[] membershipPortRange = this.membershipConfig.getMembershipPortRange();
     // TODO use bind-address from config (membershipConfig.getBindAddress())
 
+    // tell Rapid not to shut down the messenger if there's a problem joining
+    System.setProperty("rapid.cluster.inhibitMessengerShutdown", "true");
+
     String hostname = membershipConfig.getBindAddress();
     if (hostname == null || hostname.trim().isEmpty()) {
       hostname = LocalHostUtil.getLocalHost().getCanonicalHostName();
@@ -921,8 +924,6 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
     listenAddress = HostAndPort.fromParts(hostname, port);
 
-    initializeClusterBuilder(metadata);
-
     boolean bypassDiscovery = Boolean.getBoolean(BYPASS_DISCOVERY_PROPERTY);
 
     // concurrent startup loop
@@ -933,6 +934,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     final int triesBeforeVoting = 10;
     HostAndPort seedAddress = null;
     do {
+      initializeClusterBuilder(metadata);
       if (bypassDiscovery) {
         logger.info("bypassDiscovery is set - starting new cluster");
         cluster = clusterBuilder.start();
@@ -949,17 +951,11 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
         }
       } catch (MemberStartupException e) {
         if (membershipLocator == null) {
+          messenger.shutdown();
           throw e;
         }
         tries++;
       } catch (Cluster.JoinException e) {
-        logger.info("Unable to join cluster using seed {}", seedAddress, e);
-        // TODO here we should record the failed seed address and loop to try another one.
-        // Without doing this we are only supporting a single locator and may have trouble
-        // rejoining when all seeds are down and we've recovered the view from disk
-        if (membershipLocator == null) {
-          throw new MemberStartupException("Unable to join the cluster", e);
-        }
         tries++;
       }
       if (cluster == null) {
@@ -980,12 +976,14 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
               cluster = clusterBuilder.join(seedAddress);
             }
           } catch (Cluster.JoinException e) {
+            messenger.shutdown();
             throw new MemberStartupException("Unable to join the cluster", e);
           }
         } else {
           try {
             Thread.sleep(JOIN_RETRY_SLEEP);
           } catch (InterruptedException e) {
+            messenger.shutdown();
             throw new MemberStartupException("join attempt was interrupted");
           }
         }

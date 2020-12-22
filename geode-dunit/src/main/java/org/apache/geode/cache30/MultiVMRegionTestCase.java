@@ -42,6 +42,7 @@ import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Stream;
 
 import org.awaitility.core.ConditionTimeoutException;
@@ -115,6 +116,7 @@ import org.apache.geode.internal.offheap.StoredObject;
 import org.apache.geode.internal.serialization.KnownVersion;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DistributedTestUtils;
+import org.apache.geode.test.dunit.IgnoredException;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.SerializableRunnableIF;
 import org.apache.geode.test.dunit.ThreadUtils;
@@ -185,6 +187,7 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
     vm1 = VM.getVM(1);
     vm2 = VM.getVM(2);
     vm3 = VM.getVM(3);
+    IgnoredException.addIgnoredException(RejectedExecutionException.class);
   }
 
   @After
