@@ -266,10 +266,10 @@ public class GMSMembershipView<ID extends MemberIdentifier> implements DataSeria
    */
   public List<ID> getNewMembers() {
     throw new NotImplementedException();
-//    List<ID> result = new ArrayList<>(5);
-//    result.addAll(this.members.stream().filter(mbr -> mbr.getVmViewId() == this.viewId)
-//        .collect(Collectors.toList()));
-//    return result;
+    // List<ID> result = new ArrayList<>(5);
+    // result.addAll(this.members.stream().filter(mbr -> mbr.getVmViewId() == this.viewId)
+    // .collect(Collectors.toList()));
+    // return result;
   }
 
   public boolean remove(ID mbr) {

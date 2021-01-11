@@ -44,7 +44,7 @@ class DependencyConstraints implements Plugin<Project> {
     deps.put("micrometer.version", "1.6.1")
     deps.put("shiro.version", "1.7.0")
     deps.put("slf4j-api.version", "1.7.30")
-    deps.put("rapid.version", "1.0-SNAPSHOT")
+    deps.put("rapid.version", "0.8.0-SNAPSHOT")
 
     // These version numbers are used in testing various versions of tomcat and are consumed explicitly
     // in will be called explicitly in the relevant extensions module, and respective configurations
@@ -107,7 +107,7 @@ class DependencyConstraints implements Plugin<Project> {
         api(group: 'com.sun.mail', name: 'javax.mail', version: '1.6.2')
         api(group: 'com.sun.xml.bind', name: 'jaxb-impl', version: '2.3.2')
         api(group: 'com.tngtech.archunit', name:'archunit-junit4', version: '0.12.0')
-        api(group: 'com.vrg', name: 'rapid', version: '1.0-SNAPSHOT')
+        api(group: 'com.github.lalithsuresh', name: 'rapid', version: '0.8.0-SNAPSHOT')
         api(group: 'com.zaxxer', name: 'HikariCP', version: '3.4.5')
         api(group: 'commons-beanutils', name: 'commons-beanutils', version: '1.9.4')
         api(group: 'commons-codec', name: 'commons-codec', version: '1.15')

@@ -37,7 +37,6 @@ import static org.apache.geode.distributed.ConfigurationProperties.ROLES;
 import static org.apache.geode.distributed.ConfigurationProperties.SECURITY_MANAGER;
 import static org.apache.geode.distributed.ConfigurationProperties.START_LOCATOR;
 import static org.apache.geode.distributed.Locator.getLocator;
-import static org.apache.geode.distributed.internal.membership.api.MembershipManagerHelper.getDistribution;
 import static org.apache.geode.test.awaitility.GeodeAwaitility.await;
 import static org.apache.geode.test.awaitility.GeodeAwaitility.getTimeout;
 import static org.apache.geode.test.dunit.Host.getHost;
@@ -522,16 +521,16 @@ public class ReconnectDUnitTest extends JUnit4CacheTestCase {
             }
             assertTrue("expected system to be reconnected", ds.getReconnectedSystem() != null);
 
-            // todo how to detect a newer view?  Just look for a change?
-//            int oldViewId =
-//                getDistribution(ds).getLocalMember().getVmViewId();
-//            int newViewId =
-//                ((InternalDistributedMember) ds.getReconnectedSystem().getDistributedMember())
-//                    .getVmViewId();
-//            if (!(newViewId > oldViewId)) {
-//              fail("expected a new ID to be assigned.  oldViewId=" + oldViewId + "; newViewId="
-//                  + newViewId);
-//            }
+            // todo how to detect a newer view? Just look for a change?
+            // int oldViewId =
+            // getDistribution(ds).getLocalMember().getVmViewId();
+            // int newViewId =
+            // ((InternalDistributedMember) ds.getReconnectedSystem().getDistributedMember())
+            // .getVmViewId();
+            // if (!(newViewId > oldViewId)) {
+            // fail("expected a new ID to be assigned. oldViewId=" + oldViewId + "; newViewId="
+            // + newViewId);
+            // }
             return ds.getReconnectedSystem().getDistributedMember();
           }
         });

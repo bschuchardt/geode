@@ -97,7 +97,7 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
-      <groupId>com.vrg</groupId>
+      <groupId>com.github.lalithsuresh</groupId>
       <artifactId>rapid</artifactId>
       <scope>runtime</scope>
     </dependency>

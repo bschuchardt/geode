@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.vrg.rapid.Cluster;
+import com.vrg.rapid.ClusterStatusChange;
 import com.vrg.rapid.NodeStatusChange;
 import com.vrg.rapid.messaging.impl.NettyClientServer;
 import com.vrg.rapid.pb.EdgeStatus;
@@ -667,29 +668,29 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       if (surpriseMembers.containsKey(member)) {
         return true;
       }
-//      if (member.getVmViewId() < 0) {
-//        logger.warn(
-//            "adding a surprise member that has not yet joined the distributed system: " + member,
-//            new Exception("stack trace"));
-//      }
-//      if (latestView.getViewId() > member.getVmViewId()) {
-//        // tell the process that it should shut down distribution.
-//        // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
-//        new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
-//          // fix for bug #42548
-//          // this is an old member that shouldn't be added
-//          logger.warn("attempt to add old member: {} as surprise member to {}",
-//              member, latestView);
-//          try {
-//            requestMemberRemoval(member,
-//                "this member is no longer in the view but is initiating connections");
-//          } catch (MembershipClosedException | MemberDisconnectedException e) {
-//            // okay to ignore
-//          }
-//        }).start();
-//        addShunnedMember(member);
-//        return false;
-//      }
+      // if (member.getVmViewId() < 0) {
+      // logger.warn(
+      // "adding a surprise member that has not yet joined the distributed system: " + member,
+      // new Exception("stack trace"));
+      // }
+      // if (latestView.getViewId() > member.getVmViewId()) {
+      // // tell the process that it should shut down distribution.
+      // // Run in a separate thread so we don't hold the view lock during the request. Bug #44995
+      // new LoggingThread("Removing shunned GemFire node " + member, false, () -> {
+      // // fix for bug #42548
+      // // this is an old member that shouldn't be added
+      // logger.warn("attempt to add old member: {} as surprise member to {}",
+      // member, latestView);
+      // try {
+      // requestMemberRemoval(member,
+      // "this member is no longer in the view but is initiating connections");
+      // } catch (MembershipClosedException | MemberDisconnectedException e) {
+      // // okay to ignore
+      // }
+      // }).start();
+      // addShunnedMember(member);
+      // return false;
+      // }
 
       // Adding the member to this set ensures we won't remove it if a new
       // view comes in and it is still not visible.
@@ -1060,7 +1061,9 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
    * Being concensus based, Rapid will not cast a new view if the number of nodes drops to
    * one, so we take this opportunity to detect that situation and cast a local view change.
    */
-  private void onViewChangeProposal(long viewID, List<NodeStatusChange> nodeStatusChanges) {
+  private void onViewChangeProposal(ClusterStatusChange clusterStatusChange) {
+    long viewID = clusterStatusChange.getConfigurationId();
+    List<NodeStatusChange> nodeStatusChanges = clusterStatusChange.getDelta();
     logger.info("BRUCE: " + localAddress + " Rapid.onViewChangeProposal: " + nodeStatusChanges);
     try {
       // if we're still joining we can punt to onViewChange to process the changes
@@ -1084,7 +1087,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     // here we try to detect whether the cluster has devolved to a single member (this node)
     MembershipView<ID> newView = createGeodeView(latestView, viewID, nodeStatusChanges);
     if (newView.size() == 1 && newView.contains(localAddress)) {
-      logger.info("BRUCE: becoming sole member of the cluster", new Exception("stack trace"));
+      logger.info("BRUCE: becoming sole member of the cluster");
       handleOrDeferViewEvent(newView);
       cluster.shutdownForRestart();
       Map<String, ByteString> metadata = new HashMap<>();
@@ -1111,7 +1114,9 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     }
   }
 
-  private synchronized void onViewChange(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
+  private synchronized void onViewChange(ClusterStatusChange clusterStatusChange) {
+    long viewID = clusterStatusChange.getConfigurationId();
+    List<NodeStatusChange> nodeStatusChanges = clusterStatusChange.getDelta();
     logger.info("BRUCE: " + localAddress + " Rapid.onViewChange: " + nodeStatusChanges);
     MembershipView<ID> currentView = latestView;
     if (firstView && !isConnected()) {
@@ -1151,7 +1156,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     Set<ID> downnodes = new HashSet<>(nodeStatusChanges.size());
     for (NodeStatusChange nodeStatusChange : nodeStatusChanges) {
       Metadata metadata = nodeStatusChange.getMetadata();
-      ID geodeMember = (ID)byteStringToObject(metadata.getMetadataMap().get(GEODE_ID), serializer);
+      ID geodeMember = (ID) byteStringToObject(metadata.getMetadataMap().get(GEODE_ID), serializer);
       if (nodeStatusChange.getStatus() == EdgeStatus.UP) {
         upnodes.add(geodeMember);
       } else {
@@ -1191,44 +1196,44 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   /**
    * Notification from Rapid that this node has been kicked out of the cluster
    */
-  private void onKicked(Long viewID, List<NodeStatusChange> nodeStatusChanges) {
-    {
-      logger.info("BRUCE: Rapid.onKicked: " + nodeStatusChanges);
-      if (shutdownInProgress || isJoining()) {
-        return;
-      }
+  private void onKicked(ClusterStatusChange clusterStatusChange) {
+    long viewID = clusterStatusChange.getConfigurationId();
+    List<NodeStatusChange> nodeStatusChanges = clusterStatusChange.getDelta();
+    logger.info("BRUCE: Rapid.onKicked: " + nodeStatusChanges);
+    if (shutdownInProgress || isJoining()) {
+      return;
+    }
 
-      setShutdown();
+    setShutdown();
 
-      final Exception shutdownCause = new MemberDisconnectedException(nodeStatusChanges.toString());
+    final Exception shutdownCause = new MemberDisconnectedException(nodeStatusChanges.toString());
 
-      // cache the exception so it can be appended to ShutdownExceptions
-      // services.setShutdownCause(shutdownCause);
-      // services.getCancelCriterion().cancel(reason);
+    // cache the exception so it can be appended to ShutdownExceptions
+    // services.setShutdownCause(shutdownCause);
+    // services.getCancelCriterion().cancel(reason);
 
-      // if (!inhibitForceDisconnectLogging) {
-      logger.fatal(
-          String.format("Membership service failure: %s", shutdownCause.getMessage()),
-          shutdownCause);
-      // }
+    // if (!inhibitForceDisconnectLogging) {
+    logger.fatal(
+        String.format("Membership service failure: %s", shutdownCause.getMessage()),
+        shutdownCause);
+    // }
 
-      // todo will we continue to support auto-reconnect? It's useful for handling kicked-out
-      // todo members due to GC pauses
-      // if (this.isReconnectingDS()) {
-      // logger.info("Reconnecting system failed to connect");
-      // uncleanShutdown(reason,
-      // new MemberDisconnectedException("reconnecting system failed to connect"));
-      // return;
-      // }
+    // todo will we continue to support auto-reconnect? It's useful for handling kicked-out
+    // todo members due to GC pauses
+    // if (this.isReconnectingDS()) {
+    // logger.info("Reconnecting system failed to connect");
+    // uncleanShutdown(reason,
+    // new MemberDisconnectedException("reconnecting system failed to connect"));
+    // return;
+    // }
 
-      try {
-        membershipListener.saveConfig();
-      } finally {
-        new LoggingThread("DisconnectThread", false, () -> {
-          lifecycleListener.forcedDisconnect();
-          uncleanShutdown(shutdownCause.getMessage(), shutdownCause);
-        }).start();
-      }
+    try {
+      membershipListener.saveConfig();
+    } finally {
+      new LoggingThread("DisconnectThread", false, () -> {
+        lifecycleListener.forcedDisconnect();
+        uncleanShutdown(shutdownCause.getMessage(), shutdownCause);
+      }).start();
     }
   }
 
@@ -1824,7 +1829,8 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   /**
    * Protobuf deserialization
    */
-  public DataSerializableFixedID byteStringToObject(ByteString byteString, DSFIDSerializer serializer) {
+  public DataSerializableFixedID byteStringToObject(ByteString byteString,
+      DSFIDSerializer serializer) {
     ByteArrayDataInput input = new ByteArrayDataInput(byteString.toByteArray());
     DeserializationContext context = serializer.createDeserializationContext(input);
     try {

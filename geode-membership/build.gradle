@@ -40,7 +40,7 @@ dependencies {
     implementation('org.jgroups:jgroups')
 
     // VMware Research's Rapid membership implementation
-    implementation('com.vrg:rapid')
+    implementation('com.github.lalithsuresh:rapid')
 
 
     testImplementation(project(':geode-junit'))

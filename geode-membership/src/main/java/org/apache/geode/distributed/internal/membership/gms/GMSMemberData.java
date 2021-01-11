@@ -21,15 +21,10 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.net.InetAddress;
 
-import com.google.protobuf.ByteString;
-import org.apache.commons.lang3.SerializationException;
 import org.jgroups.util.UUID;
 
 import org.apache.geode.distributed.internal.membership.api.MemberData;
 import org.apache.geode.distributed.internal.membership.api.MemberIdentifier;
-import org.apache.geode.internal.serialization.BufferDataOutputStream;
-import org.apache.geode.internal.serialization.ByteArrayDataInput;
-import org.apache.geode.internal.serialization.DSFIDSerializer;
 import org.apache.geode.internal.serialization.DeserializationContext;
 import org.apache.geode.internal.serialization.KnownVersion;
 import org.apache.geode.internal.serialization.SerializationContext;
