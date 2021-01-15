@@ -394,16 +394,22 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
 
   @Override
   public void shutdown() {
+    if (cluster == null) {
+      return; // this membership was never started
+    }
     logger.info("Shutting down membership {}", localAddress);
     setShutdown();
     try {
       cluster.leaveGracefully();
-      messenger.shutdown();
     } finally {
       try {
-        stop();
+        messenger.shutdown();
       } finally {
-        viewExecutor.shutdown();
+        try {
+          stop();
+        } finally {
+          viewExecutor.shutdown();
+        }
       }
     }
   }
@@ -1064,7 +1070,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private void onViewChangeProposal(ClusterStatusChange clusterStatusChange) {
     long viewID = clusterStatusChange.getConfigurationId();
     List<NodeStatusChange> nodeStatusChanges = clusterStatusChange.getDelta();
-    logger.info("BRUCE: " + localAddress + " Rapid.onViewChangeProposal: " + nodeStatusChanges);
+    // logger.info("BRUCE: " + localAddress + " Rapid.onViewChangeProposal: " + nodeStatusChanges);
     try {
       // if we're still joining we can punt to onViewChange to process the changes
       if (latestView == null) {
@@ -1076,6 +1082,10 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
       if (addingNewNode) {
         return;
       }
+      // this is a hack to try to detect whether there are no other members after this view
+      // change. It doesn't always work because we don't always see a proposal when all
+      // other nodes go away. Best to have at least two nodes up at all times or bring everything
+      // down.
       checkBecomeSoleMember(viewID, nodeStatusChanges);
     } catch (RuntimeException | Error t) {
       t.printStackTrace();
@@ -1087,7 +1097,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     // here we try to detect whether the cluster has devolved to a single member (this node)
     MembershipView<ID> newView = createGeodeView(latestView, viewID, nodeStatusChanges);
     if (newView.size() == 1 && newView.contains(localAddress)) {
-      logger.info("BRUCE: becoming sole member of the cluster");
+      // logger.info("BRUCE: becoming sole member of the cluster");
       handleOrDeferViewEvent(newView);
       cluster.shutdownForRestart();
       Map<String, ByteString> metadata = new HashMap<>();
@@ -1117,12 +1127,12 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
   private synchronized void onViewChange(ClusterStatusChange clusterStatusChange) {
     long viewID = clusterStatusChange.getConfigurationId();
     List<NodeStatusChange> nodeStatusChanges = clusterStatusChange.getDelta();
-    logger.info("BRUCE: " + localAddress + " Rapid.onViewChange: " + nodeStatusChanges);
+    // logger.info("BRUCE: " + localAddress + " Rapid.onViewChange: " + nodeStatusChanges);
     MembershipView<ID> currentView = latestView;
     if (firstView && !isConnected()) {
       firstView = false;
       latestView = createGeodeView(currentView, viewID, nodeStatusChanges);
-      logger.info("BRUCE: created initial view {}", latestView);
+      // logger.info("BRUCE: created initial view {}", latestView);
       logger.debug("Membership: initial view is {}", latestView);
     } else {
       handleOrDeferViewEvent(createGeodeView(currentView, viewID, nodeStatusChanges));
@@ -1140,12 +1150,12 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
     for (ID member : viewChanges.getMembers()) {
       if (!newView.contains(member)) {
         // todo here we could inform the View that this is a new member for its getNewMembers method
-        logger.info("BRUCE: adding new member {}", member);
+        // logger.info("BRUCE: adding new member {}", member);
         newView.add(member);
       }
     }
     newView.makeUnmodifiable();
-    logger.info("BRUCE: created new view from nodeStatusChanges: {}", newView);
+    // logger.info("BRUCE: created new view from nodeStatusChanges: {}", newView);
     return newView;
   }
 
@@ -1369,7 +1379,7 @@ public class MembershipImpl<ID extends MemberIdentifier> implements Membership<I
           }
         }
 
-        logger.info("Membership: Processing addition <{}>", m);
+        // logger.info("Membership: Processing addition <{}>", m);
 
         membershipListener.newMemberConnected(m);
       } // additions

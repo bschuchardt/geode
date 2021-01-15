@@ -1616,8 +1616,6 @@ public class ClusterDistributionManager implements DistributionManager {
 
     // we need to send this to everyone else; even admin vm
     Set<InternalDistributedMember> allOthers = new HashSet<>(getViewMembers());
-    logger.info("BRUCE: startupmessage allOthers={} and my address is {}", allOthers,
-        getDistributionManagerId());
     allOthers.remove(getDistributionManagerId());
 
     if (allOthers.isEmpty()) {

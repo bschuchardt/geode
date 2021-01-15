@@ -35,6 +35,8 @@ import java.util.Map;
  */
 public class Invoke {
 
+  private static VM ignoreVM;
+
   protected Invoke() {}
 
   /**
@@ -53,6 +55,8 @@ public class Invoke {
       Host host = Host.getHost(hostIndex);
 
       for (VM vm : host.getAllVMs()) {
+        if (vm == ignoreVM)
+          continue;
         if (name != null)
           vm.invoke(name, runnable);
         else
@@ -74,6 +78,8 @@ public class Invoke {
       Host host = Host.getHost(hostIndex);
 
       for (VM vm : host.getAllVMs()) {
+        if (vm == ignoreVM)
+          continue;
         vm.invoke(targetClass, targetMethod);
       }
     }
@@ -92,6 +98,8 @@ public class Invoke {
       Host host = Host.getHost(hostIndex);
 
       for (VM vm : host.getAllVMs()) {
+        if (vm == ignoreVM)
+          continue;
         vm.invoke(targetClass, targetMethod, methodArgs);
       }
     }
@@ -114,6 +122,8 @@ public class Invoke {
     for (int h = 0; h < Host.getHostCount(); h++) {
       Host host = Host.getHost(h);
       for (VM vm : host.getAllVMs()) {
+        if (vm == ignoreVM)
+          continue;
         if (name != null)
           ret.put(vm, vm.invoke(name, callable));
         else
@@ -128,5 +138,9 @@ public class Invoke {
     if (locator != null) {
       locator.invoke(runnable);
     }
+  }
+
+  public static void ignoreVM(VM vm) {
+    ignoreVM = vm;
   }
 }

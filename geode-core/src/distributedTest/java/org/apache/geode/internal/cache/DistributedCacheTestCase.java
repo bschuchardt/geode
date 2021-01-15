@@ -387,22 +387,4 @@ public abstract class DistributedCacheTestCase extends JUnit4DistributedTestCase
     assertEquals(expected, sub.get(entryName));
   }
 
-  /**
-   * Assumes there is only one host, and invokes the given method in every VM that host knows about.
-   */
-  public void forEachVMInvoke(String methodName, Object[] args) {
-    forEachVMInvoke(getClass(), methodName, args);
-  }
-
-  /**
-   * Assumes there is only one host, and invokes the given method in every VM that host knows about.
-   */
-  public void forEachVMInvoke(Class<?> targetClass, String methodName, Object[] args) {
-    Host host = Host.getHost(0);
-    int vmCount = host.getVMCount();
-    for (int i = 0; i < vmCount; i++) {
-      LogWriterUtils.getLogWriter().info("Invoking " + methodName + "on VM#" + i);
-      host.getVM(i).invoke(targetClass, methodName, args);
-    }
-  }
 }

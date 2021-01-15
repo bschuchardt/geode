@@ -29,6 +29,7 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.DataOutput;
+import java.io.File;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ import java.util.stream.Stream;
 
 import org.awaitility.core.ConditionTimeoutException;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -90,6 +92,7 @@ import org.apache.geode.cache.server.CacheServer;
 import org.apache.geode.cache.util.CacheListenerAdapter;
 import org.apache.geode.cache.util.TxEventTestUtil;
 import org.apache.geode.distributed.ConfigurationProperties;
+import org.apache.geode.distributed.Locator;
 import org.apache.geode.distributed.internal.DMStats;
 import org.apache.geode.distributed.internal.DistributionConfig;
 import org.apache.geode.distributed.internal.membership.InternalDistributedMember;
@@ -117,12 +120,14 @@ import org.apache.geode.internal.serialization.KnownVersion;
 import org.apache.geode.test.dunit.AsyncInvocation;
 import org.apache.geode.test.dunit.DistributedTestUtils;
 import org.apache.geode.test.dunit.IgnoredException;
+import org.apache.geode.test.dunit.Invoke;
 import org.apache.geode.test.dunit.SerializableRunnable;
 import org.apache.geode.test.dunit.SerializableRunnableIF;
 import org.apache.geode.test.dunit.ThreadUtils;
 import org.apache.geode.test.dunit.VM;
 import org.apache.geode.test.dunit.Wait;
 import org.apache.geode.test.dunit.cache.internal.JUnit4CacheTestCase;
+import org.apache.geode.test.dunit.internal.DUnitLauncher;
 import org.apache.geode.test.dunit.internal.JUnit4DistributedTestCase;
 
 /**
@@ -187,12 +192,38 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
     vm1 = VM.getVM(1);
     vm2 = VM.getVM(2);
     vm3 = VM.getVM(3);
+    if (extraLocator == null) {
+      createExtraLocator();
+    }
     IgnoredException.addIgnoredException(RejectedExecutionException.class);
+  }
+
+  static VM extraLocator;
+
+  private void createExtraLocator() {
+    extraLocator = VM.getVM(4);
+    Invoke.ignoreVM(extraLocator);
+    Properties properties = getDistributedSystemProperties();
+    properties.put(ConfigurationProperties.LOCATORS, DUnitLauncher.getLocatorString());
+    extraLocator.invoke(() -> {
+      Locator.startLocatorAndDS(0, new File(""), properties);
+    });
   }
 
   @After
   public void caseTearDown() {
     disconnectAllFromDS();
+  }
+
+  @AfterClass
+  public static void classTearDown() {
+    Invoke.ignoreVM(null);
+    if (extraLocator != null) {
+      extraLocator.invoke(() -> {
+        Locator.getLocator().stop();
+      });
+      extraLocator = null;
+    }
   }
 
   @SuppressWarnings("RedundantThrows") // Subclasses may want to throw
@@ -850,14 +881,20 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
 
     int vmCount = VM.getVMCount();
     for (int i = 0; i < vmCount; i++) {
-      VM vm0 = VM.getVM(i);
-      vm0.invoke("Create Region", () -> {
+      VM vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
+      vm.invoke("Create Region", () -> {
         createRegion(name);
       });
     }
 
     for (int i = 0; i < vmCount; i++) {
       VM vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
       vm.invoke("put entry", () -> {
         Region<Object, Object> region = getRootRegion().getSubregion(name);
         region.put(key, value);
@@ -867,6 +904,9 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
 
     for (int i = 0; i < vmCount; i++) {
       VM vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
       vm.invoke("Invalidate Entry", () -> {
         Region<Object, Object> region = getRootRegion().getSubregion(name);
         region.invalidate(key);
@@ -875,8 +915,11 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
     }
 
     for (int i = 0; i < vmCount; i++) {
-      VM vm0 = VM.getVM(i);
-      vm0.invoke("Verify entry invalidation", () -> {
+      VM vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
+      vm.invoke("Verify entry invalidation", () -> {
         Region<Object, Object> region = getRootRegion().getSubregion(name);
         Region.Entry entry = region.getEntry(key);
         assertThat(entry).isNotNull();
@@ -2188,6 +2231,9 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
 
     for (int i = 1; i < vmCount; i++) {
       VM vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
       vm.invoke("testDistributedPut: Create Region", () -> {
         createRegion(rgnName);
       });
@@ -4379,6 +4425,9 @@ public abstract class MultiVMRegionTestCase extends RegionTestCase {
     int vmCount = VM.getVMCount();
     for (int i = 1; i < vmCount; i++) {
       vm = VM.getVM(i);
+      if (vm == extraLocator) {
+        continue;
+      }
       vm.invoke("testTXSimpleOps: Create Region", create);
       if (!getRegionAttributes().getDataPolicy().withReplication()
           && !getRegionAttributes().getDataPolicy().withPreloaded()) {
